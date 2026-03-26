@@ -1,0 +1,20 @@
+{
+  "pattern_id": "pattern-dev-workflow-001",
+  "name": "项目开发流程",
+  "description": "需求→设计→实现→测试→文档的完整流程",
+  "trigger_conditions": [
+    "用户提出新项目",
+    "需要从零开始构建",
+    "复杂任务需要规划"
+  ],
+  "workflow": [
+    "讨论设计",
+    "逐步实现 (MVP→增强→完善)",
+    "测试验证",
+    "文档完善"
+  ],
+  "success_rate": 1,
+  "usage_count": 1,
+  "created_at": "2026-03-26",
+  "effectiveness": "high"
+}

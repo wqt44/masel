@@ -1,0 +1,186 @@
+{
+  "id": "masel",
+  "name": "MASEL - Multi-Agent System with Error Learning",
+  "version": "1.2.4",
+  "description": "A self-evolving multi-agent system that orchestrates sub-agents to complete complex tasks while learning from errors",
+  "author": "TvTongg",
+  "license": "MIT",
+  
+  "entry": "./src/index.ts",
+  "type": "module",
+  
+  "tools": [
+    {
+      "name": "masel_plan",
+      "description": "Analyze task and create execution plan with brainstorm, spec refinement, and task breakdown",
+      "parameters": {
+        "task": { "type": "string", "description": "User task description" },
+        "workflow_type": { 
+          "type": "string", 
+          "enum": ["simple", "complex", "research", "coding"],
+          "default": "simple"
+        }
+      }
+    },
+    {
+      "name": "masel_execute",
+      "description": "Execute subtasks with parallel sub-agents and Worktree isolation",
+      "parameters": {
+        "plan": { "type": "object", "description": "Execution plan from masel_plan" },
+        "options": {
+          "type": "object",
+          "properties": {
+            "parallel": { "type": "boolean", "default": false },
+            "checkpoint": { "type": "boolean", "default": true }
+          }
+        }
+      }
+    },
+    {
+      "name": "masel_review",
+      "description": "Review sub-agent outputs with Loss Function quality assessment",
+      "parameters": {
+        "results": { "type": "array", "description": "Sub-agent execution results" },
+        "criteria": { "type": "object", "description": "Review criteria" }
+      }
+    },
+    {
+      "name": "masel_learn",
+      "description": "Record error and update Agent Soul with lessons learned",
+      "parameters": {
+        "error": { "type": "object", "description": "Error details" },
+        "context": { "type": "object", "description": "Execution context" },
+        "trajectory": { "type": "object", "description": "Complete execution trajectory" }
+      }
+    },
+    {
+      "name": "masel_status",
+      "description": "Check MASEL task execution status",
+      "parameters": {
+        "task_id": { "type": "string", "description": "Task identifier" }
+      }
+    },
+    {
+      "name": "masel_souls",
+      "description": "Manage Agent Souls - list, update, or reset",
+      "parameters": {
+        "action": { 
+          "type": "string", 
+          "enum": ["list", "get", "update", "reset"]
+        },
+        "agent_type": { "type": "string" },
+        "content": { "type": "string" }
+      }
+    }
+  ],
+  
+  "config": {
+    "default_workflow": "simple",
+    "max_retries": 3,
+    "checkpoint_enabled": true,
+    "review_enabled": true,
+    "auto_learn": true,
+    "memory_layers": {
+      "hot": { "max_items": 10, "ttl": 3600 },
+      "warm": { "max_days": 7 },
+      "cold": { "embedding_model": "local" }
+    },
+    "soul_update_trigger": {
+      "error_count": 5,
+      "time_threshold": "1d"
+    },
+    "resilience": {
+      "enable_fallback": true,
+      "enable_retry": true,
+      "max_retry_attempts": 2,
+      "retry_delay_ms": 1000
+    },
+    "cleanup": {
+      "auto_cleanup": true,
+      "executions_retention_days": 7,
+      "checkpoints_retention_days": 3,
+      "errors_retention_days": 30
+    },
+    "safe_learning": {
+      "require_approval": true,
+      "min_confidence": 0.7,
+      "min_error_count": 3,
+      "max_soul_size_kb": 50
+    },
+    "security": {
+      "enable_code_scan": true,
+      "enable_sandbox": true,
+      "forbidden_patterns": [
+        "rm -rf /",
+        "rm -rf /*",
+        ">/dev/null",
+        "eval(",
+        "exec(",
+        "nc -e",
+        "bash -i",
+        "/dev/tcp/"
+      ],
+      "max_execution_time_sec": 300,
+      "max_file_size_mb": 10
+    },
+    "privacy": {
+      "enable_redaction": true,
+      "preserve_length": false,
+      "redact_patterns": [
+        "api_key",
+        "password",
+        "secret",
+        "token",
+        "credit_card",
+        "phone"
+      ]
+    },
+    "nesting_limits": {
+      "max_depth": 2,
+      "max_siblings_per_level": 8,
+      "max_total_subagents": 20
+    },
+    "conflict_detection": {
+      "enable_auto_resolve": true,
+      "auto_resolve_types": ["superseded", "redundant"],
+      "require_review_types": ["contradiction", "overlap"]
+    },
+    "rate_limiting": {
+      "max_requests_per_minute": 30,
+      "max_requests_per_hour": 500,
+      "max_concurrent_requests": 5,
+      "backoff_strategy": "exponential",
+      "initial_retry_delay_ms": 1000,
+      "max_retry_delay_ms": 60000,
+      "max_retries": 3
+    },
+    "time_decay": {
+      "half_life_days": 30,
+      "min_weight": 0.1,
+      "max_weight": 1.0,
+      "boost_recent": true,
+      "recent_window_days": 7
+    },
+    "bias_mitigation": {
+      "diversity_boost": true,
+      "max_same_type_errors": 5,
+      "time_balanced": true,
+      "recent_weight": 0.6,
+      "old_weight": 0.4
+    }
+  },
+  
+  "hooks": {
+    "on_load": "initializeMemorySystem",
+    "on_unload": "cleanupRunningTasks"
+  },
+  
+  "dependencies": {
+    "openclaw": ">=2026.3.24"
+  },
+  
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/TvTongg/masel"
+  }
+}

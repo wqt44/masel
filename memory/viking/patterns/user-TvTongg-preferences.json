@@ -1,0 +1,21 @@
+{
+  "user_id": "TvTongg",
+  "preferences": {
+    "work_style": {
+      "likes_detailed_discussion": true,
+      "likes_phased_implementation": true,
+      "likes_progress_visibility": true,
+      "likes_innovative_solutions": true,
+      "likes_complete_documentation": true
+    },
+    "efficiency": "high",
+    "quality_focus": true,
+    "collaboration_style": "充分沟通，共同决策"
+  },
+  "successful_patterns": [
+    "pattern-dev-workflow-001",
+    "pattern-framework-fusion-001",
+    "pattern-user-collaboration-001"
+  ],
+  "updated_at": "2026-03-26"
+}

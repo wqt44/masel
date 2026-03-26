@@ -1,0 +1,20 @@
+{
+  "pattern_id": "pattern-framework-fusion-001",
+  "name": "多框架融合设计",
+  "description": "研究多个方案，提取优点，融合创新",
+  "trigger_conditions": [
+    "设计新系统",
+    "需要参考现有方案",
+    "追求创新"
+  ],
+  "workflow": [
+    "研究现有方案（至少3-5个）",
+    "对比分析优缺点",
+    "融合设计（不是复制）",
+    "实现创新"
+  ],
+  "success_rate": 1,
+  "usage_count": 1,
+  "created_at": "2026-03-26",
+  "effectiveness": "high"
+}

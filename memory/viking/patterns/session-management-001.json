@@ -1,0 +1,15 @@
+{
+  "pattern_id": "session-management-001",
+  "name": "上下文管理",
+  "description": "当上下文接近限制时，使用分层存储而非压缩",
+  "trigger_conditions": [
+    "上下文使用超过 80%",
+    "会话即将结束",
+    "需要保留重要信息"
+  ],
+  "solution": "1. 保存关键信息到文件 (Warm)\n2. 提取模式到 Viking (Cold)\n3. 新会话加载核心文件",
+  "prevention": "定期保存，不要等到满了再处理",
+  "occurrence_count": 1,
+  "success_rate": 1.0,
+  "created_at": "2026-03-26"
+}

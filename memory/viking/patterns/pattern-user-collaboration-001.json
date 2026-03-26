@@ -1,0 +1,20 @@
+{
+  "pattern_id": "pattern-user-collaboration-001",
+  "name": "用户协作模式",
+  "description": "充分沟通，共同决策，透明执行",
+  "trigger_conditions": [
+    "与用户合作",
+    "需要理解用户意图",
+    "复杂任务"
+  ],
+  "workflow": [
+    "充分理解用户意图",
+    "主动提出方案",
+    "保持沟通",
+    "让用户参与决策"
+  ],
+  "success_rate": 1,
+  "usage_count": 1,
+  "created_at": "2026-03-26",
+  "effectiveness": "high"
+}
