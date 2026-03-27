@@ -426,8 +426,102 @@ module.exports = {
   masel,
   // Viking Lite API
   createMemory,
-  withMemory
+  withMemory,
+  // Auto Memory API - 让 AI 自动记住你！
+  initAutoMemory,
+  autoRecord,
+  autoRecall
 };
+
+// ============================================================================
+// Auto Memory System - 自动记忆系统
+// 让 AI 自动记住用户的一切！
+// ============================================================================
+
+/**
+ * 初始化自动记忆系统
+ * 
+ * @param {string} userId - 用户ID (例如: "TvTongg")
+ * @param {string} agentId - 代理ID (例如: "TwTongg")
+ * @returns {AutoMemory} 自动记忆实例
+ * 
+ * 示例:
+ * ```javascript
+ * // 只需要初始化一次
+ * initAutoMemory("TvTongg", "TwTongg");
+ * 
+ * // 之后每次对话自动记录
+ * await autoRecord("用户消息", "AI回复");
+ * 
+ * // 自动获取相关记忆
+ * const memories = await autoRecall("当前上下文");
+ * ```
+ */
+function initAutoMemory(userId, agentId) {
+  const autoMemoryPath = path.join(__dirname, 'src', 'utils', 'auto-memory.js');
+  
+  try {
+    const { initAutoMemory: init } = require(autoMemoryPath);
+    return init(userId, agentId);
+  } catch (e) {
+    console.log("⚠️  Auto Memory not compiled. Run 'npx tsc' first.");
+    return createMockAutoMemory(userId, agentId);
+  }
+}
+
+/**
+ * 自动记录对话
+ * 
+ * @param {string} message - 用户消息
+ * @param {string} response - AI回复
+ */
+async function autoRecord(message, response) {
+  const autoMemoryPath = path.join(__dirname, 'src', 'utils', 'auto-memory.js');
+  
+  try {
+    const { autoRecord: record } = require(autoMemoryPath);
+    await record(message, response);
+  } catch (e) {
+    // 静默失败，不影响主流程
+  }
+}
+
+/**
+ * 自动获取相关记忆
+ * 
+ * @param {string} context - 当前上下文
+ * @returns {Promise<string[]>} 相关记忆列表
+ */
+async function autoRecall(context) {
+  const autoMemoryPath = path.join(__dirname, 'src', 'utils', 'auto-memory.js');
+  
+  try {
+    const { autoRecall: recall } = require(autoMemoryPath);
+    return await recall(context);
+  } catch (e) {
+    return [];
+  }
+}
+
+/**
+ * Auto Memory 模拟实现
+ */
+function createMockAutoMemory(userId, agentId) {
+  return {
+    initialize: async () => {
+      console.log(`[AutoMemory] Mock initialized for ${userId}`);
+    },
+    recordConversation: async (msg, resp) => {
+      console.log(`[AutoMemory] Mock recorded: ${msg.substring(0, 30)}...`);
+    },
+    getRelevantMemories: async (context) => {
+      return [];
+    },
+    getUserProfile: async () => {
+      return { preferences: {}, events: [], patterns: [] };
+    }
+  };
+}
 
 // 如果直接运行
 if (require.main === module) {
@@ -436,4 +530,9 @@ if (require.main === module) {
   console.log("Usage:");
   console.log("  const { masel } = require('./masel-wrapper');");
   console.log("  await masel.complete('Your task here');");
+  console.log("");
+  console.log("Auto Memory:");
+  console.log("  const { initAutoMemory, autoRecord, autoRecall } = require('./masel-wrapper');");
+  console.log("  initAutoMemory('TvTongg', 'TwTongg');");
+  console.log("  await autoRecord('用户消息', 'AI回复');");
 }

@@ -1,7 +1,7 @@
 {
   "id": "masel",
   "name": "MASEL - Multi-Agent System with Error Learning",
-  "version": "1.2.4",
+  "version": "1.4.0",
   "description": "A self-evolving multi-agent system that orchestrates sub-agents to complete complex tasks while learning from errors",
   "author": "TvTongg",
   "license": "MIT",

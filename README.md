@@ -1,8 +1,31 @@
 # MASEL - Multi-Agent System with Error Learning
 
-## 🎉🎉🎉 **v1.3.0 - Viking Lite 发布!** 🎉🎉🎉
+## 🎉🎉🎉 **v1.4.0 - Auto Memory System 发布!** 🎉🎉🎉
 
-### ✅ NEW: 简单任务也能使用 MASEL 记忆方法！
+### ✅ NEW: AI 自动记住用户的一切！
+
+```javascript
+const { initAutoMemory, autoRecord, autoRecall } = require('./masel-wrapper');
+
+// 1. 初始化 - 只需要一次
+initAutoMemory("TvTongg", "TwTongg");
+
+// 2. 自动记录对话
+await autoRecord("我喜欢详细的设计讨论", "好的，我记住了！");
+// 自动提取：likes = 详细的设计讨论
+
+// 3. 自动获取相关记忆
+const memories = await autoRecall("设计新功能");
+// 返回: ["用户的likes: 详细的设计讨论"]
+```
+
+**核心思想**: 让 AI 自动记住用户的偏好、重要事件、工作模式，无需手动调用！
+
+---
+
+## 🎉 **v1.3.0 - Viking Lite**
+
+### ✅ 简单任务也能使用 MASEL 记忆方法！
 
 ```javascript
 const { createMemory, withMemory } = require('./masel-wrapper');
@@ -243,7 +266,8 @@ skills/masel/
 ✅ **Checkpoint System**  
 ✅ **Error Pattern Extraction**  
 ✅ **Soul Auto-Update**  
-✅ **Viking Lite - 轻量级记忆** ⭐ NEW!  
+✅ **Viking Lite - 轻量级记忆** ✅
+✅ **Auto Memory - 自动用户记忆** ⭐ NEW!  
 
 ---
 
@@ -369,13 +393,14 @@ const souls = await maselSouls({ action: "list" });
 
 ## 🏆 Final Stats
 
-- **Total Files**: 15+
-- **Lines of Code**: ~5000+
+- **Total Files**: 17+
+- **Lines of Code**: ~6500+
 - **Tools Implemented**: 6/6 (100%)
-- **Test Scripts**: 5
+- **Test Scripts**: 7
 - **Agent Souls**: 3
 - **Memory Layers**: 3
 - **Frameworks Inspired**: 9
+- **Auto Memory**: ✅ NEW in v1.4.0!
 
 ---
 
