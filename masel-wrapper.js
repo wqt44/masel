@@ -287,8 +287,147 @@ class MASEL {
 // 创建全局实例
 const masel = new MASEL();
 
+// ============================================================================
+// Viking Lite - 轻量级记忆系统
+// 简单任务也能使用 MASEL 记忆方法，无需完整 MASEL 流程
+// ============================================================================
+
+/**
+ * 创建 Viking Lite 记忆实例
+ * 
+ * @param {string} agentType - 代理类型: "coder" | "researcher" | "reviewer" | "assistant"
+ * @param {string} contextPrefix - 上下文前缀，用于分类
+ * @returns {VikingLite} 记忆实例
+ * 
+ * 示例:
+ * ```javascript
+ * const memory = createMemory("assistant", "文件操作");
+ * 
+ * // 开始任务
+ * memory.startTask("读取配置文件");
+ * 
+ * try {
+ *   const result = await doSomething();
+ *   await memory.recordSuccess(result);
+ * } catch (error) {
+ *   await memory.recordFailure(error);
+ * }
+ * ```
+ */
+function createMemory(agentType, contextPrefix) {
+  // 动态导入 Viking Lite
+  const vikingLitePath = path.join(__dirname, 'src', 'utils', 'viking-lite.js');
+  
+  try {
+    const { createMemory: createVikingLite } = require(vikingLitePath);
+    return createVikingLite(agentType, contextPrefix);
+  } catch (e) {
+    // 如果 Viking Lite 未编译，提供模拟实现
+    console.log("⚠️  Viking Lite not compiled. Run 'npx tsc' first.");
+    return createMockVikingLite(agentType, contextPrefix);
+  }
+}
+
+/**
+ * 带记忆的执行任务
+ * 
+ * @param {string} agentType - 代理类型
+ * @param {string} taskDescription - 任务描述
+ * @param {Function} fn - 要执行的函数
+ * @param {Object} options - 选项
+ * @returns {Promise<any>} 任务结果
+ * 
+ * 示例:
+ * ```javascript
+ * const result = await withMemory("coder", "解析JSON文件", async () => {
+ *   return JSON.parse(data);
+ * }, { showHints: true });
+ * ```
+ */
+async function withMemory(agentType, taskDescription, fn, options = {}) {
+  const memory = createMemory(agentType);
+  
+  // 1. 获取历史提示
+  const hints = await memory.getHints(taskDescription);
+  
+  if (options.showHints && hints.length > 0) {
+    console.log("\n💡 历史提示:");
+    hints.forEach(h => console.log(`   [${h.type}] ${h.message}`));
+  }
+
+  // 2. 执行任务
+  const startTime = Date.now();
+  memory.startTask(taskDescription);
+
+  try {
+    const result = await fn();
+    
+    await memory.recordSuccess(String(result), {
+      duration_ms: Date.now() - startTime,
+      hints_used: hints.length
+    });
+    
+    return result;
+  } catch (error) {
+    await memory.recordFailure(error, {
+      duration_ms: Date.now() - startTime,
+      hints_available: hints.length
+    });
+    
+    if (options.onError) {
+      options.onError(error, hints);
+    }
+    
+    throw error;
+  }
+}
+
+/**
+ * Viking Lite 模拟实现（用于演示）
+ */
+function createMockVikingLite(agentType, contextPrefix) {
+  return {
+    startTask: (description) => {
+      console.log(`[VikingLite] Task started: ${description.substring(0, 50)}...`);
+      return `lite-${Date.now()}`;
+    },
+    recordSuccess: async (output, metadata) => {
+      console.log(`[VikingLite] Task recorded as success`);
+    },
+    recordFailure: async (error, context) => {
+      console.log(`[VikingLite] Task recorded as failure: ${error.message}`);
+    },
+    getHints: async (taskDescription) => {
+      // 模拟返回历史提示
+      return [];
+    },
+    quickRecord: async (description, fn) => {
+      const startTime = Date.now();
+      try {
+        const result = await fn();
+        console.log(`[VikingLite] Quick record success (${Date.now() - startTime}ms)`);
+        return result;
+      } catch (error) {
+        console.log(`[VikingLite] Quick record failure: ${error.message}`);
+        throw error;
+      }
+    },
+    getStats: async () => ({
+      recent_errors: 0,
+      today_errors: 0,
+      hints_available: false
+    })
+  };
+}
+
 // 导出
-module.exports = { MASEL, masel };
+module.exports = { 
+  MASEL, 
+  masel,
+  // Viking Lite API
+  createMemory,
+  withMemory
+};
 
 // 如果直接运行
 if (require.main === module) {

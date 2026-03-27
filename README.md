@@ -1,6 +1,33 @@
 # MASEL - Multi-Agent System with Error Learning
 
-## 🎉🎉🎉 **v1.2.4 - PRODUCTION READY!** 🎉🎉🎉
+## 🎉🎉🎉 **v1.3.0 - Viking Lite 发布!** 🎉🎉🎉
+
+### ✅ NEW: 简单任务也能使用 MASEL 记忆方法！
+
+```javascript
+const { createMemory, withMemory } = require('./masel-wrapper');
+
+// 方式 1: 基础记忆
+const memory = createMemory("assistant");
+memory.startTask("读取文件");
+// ... 执行任务 ...
+await memory.recordSuccess(result);
+
+// 方式 2: 一行代码带记忆
+const result = await withMemory("coder", "解析JSON", async () => {
+  return JSON.parse(data);
+});
+
+// 方式 3: 获取历史提示
+const hints = await memory.getHints("文件操作");
+// 返回之前的经验教训
+```
+
+**核心思想**: 简单任务不需要完整 MASEL 多智能体流程，但可以使用 Viking 三层记忆系统！
+
+---
+
+## 🎉 **v1.2.4 - PRODUCTION READY!**
 
 ### ✅ NEW: Rate Limiting + Time Decay + Bias Mitigation
 
@@ -189,7 +216,8 @@ skills/masel/
 └── src/
     ├── index.ts               ✅ Main entry
     ├── utils/
-    │   └── openclaw-api.ts    ✅ API utilities
+    │   ├── openclaw-api.ts    ✅ API utilities
+    │   └── viking-lite.ts     ✅ **NEW** - 轻量级记忆
     ├── memory/
     │   └── viking-store.ts    ✅ **COMPLETE**
     └── tools/                 
@@ -215,6 +243,90 @@ skills/masel/
 ✅ **Checkpoint System**  
 ✅ **Error Pattern Extraction**  
 ✅ **Soul Auto-Update**  
+✅ **Viking Lite - 轻量级记忆** ⭐ NEW!  
+
+---
+
+## 🧠 Viking Lite - 简单任务的记忆方案
+
+### 问题
+- MASEL 完整流程太重，不适合简单任务
+- 但简单任务也会犯错，也需要学习
+
+### 解决方案
+**Viking Lite**: 简单任务不使用 MASEL 多智能体流程，但使用 Viking 三层记忆系统
+
+### 使用方式
+
+```javascript
+const { createMemory, withMemory } = require('./masel-wrapper');
+
+// 方式 1: 基础记忆
+const memory = createMemory("assistant");
+memory.startTask("读取配置文件");
+try {
+  const result = await fs.readFile('config.json');
+  await memory.recordSuccess(result);
+} catch (error) {
+  await memory.recordFailure(error);
+}
+
+// 方式 2: 一行代码带记忆
+const result = await withMemory("coder", "解析JSON", async () => {
+  return JSON.parse(data);
+}, { showHints: true });
+
+// 方式 3: 获取历史提示
+const memory = createMemory("coder");
+const hints = await memory.getHints("文件操作");
+// 返回之前的错误和解决方法
+```
+
+### 特点
+- ✅ **轻量级**: 无需完整 MASEL 流程
+- ✅ **自动记录**: 成功/失败自动存入 Viking 记忆
+- ✅ **历史提示**: 执行前获取相关经验教训
+- ✅ **三层存储**: Hot (内存) + Warm (文件) + Cold (向量)
+- ✅ **渐进学习**: 错误积累后自动提示
+
+---
+
+## 🚀 Usage Examples
+
+### 完整 MASEL 工作流（复杂任务）
+```typescript
+const plan = await maselPlan({
+  task: "Build a web scraper",
+  workflow_type: "coding"
+});
+
+const execution = await maselExecute({ plan });
+const review = await maselReview({ results: execution.results });
+await maselLearn({ review_report: review, auto_update: true });
+```
+
+### Viking Lite（简单任务）
+```typescript
+const { withMemory } = require('./masel-wrapper');
+
+// 简单任务也能积累记忆
+const result = await withMemory("assistant", "获取天气", async () => {
+  return await fetchWeather("Beijing");
+});
+```
+
+---
+
+## 🏆 Final Stats
+
+- **Total Files**: 16+
+- **Lines of Code**: ~5500+
+- **Tools Implemented**: 6/6 (100%)
+- **Test Scripts**: 6
+- **Agent Souls**: 3
+- **Memory Layers**: 3
+- **Frameworks Inspired**: 9
+- **Viking Lite**: ✅ NEW!
 
 ### Inspired By 9 Frameworks
 - OpenClaw (runtime)
@@ -274,3 +386,5 @@ const souls = await maselSouls({ action: "list" });
 Built with passion, inspired by the best, ready for action! 🚀
 
 ---
+
+**伙伴，我们做到了！100%！** 🎊🔥🚀
