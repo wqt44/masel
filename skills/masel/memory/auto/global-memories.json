@@ -1,0 +1,18 @@
+[
+  {
+    "id": "mem-1774729600000-t9i70onol",
+    "type": "project",
+    "content": "用户有一个叫 chachacha 的项目",
+    "source": "我有一个叫 chachacha 的企业级项目",
+    "timestamp": "2026-03-28T20:26:40.000Z",
+    "importance": "medium"
+  },
+  {
+    "id": "mem-1774729600000-lw5n0crfp",
+    "type": "preference",
+    "content": "用户喜欢 详细的设计讨论 收到",
+    "source": "我喜欢详细的设计讨论",
+    "timestamp": "2026-03-28T20:26:40.000Z",
+    "importance": "medium"
+  }
+]

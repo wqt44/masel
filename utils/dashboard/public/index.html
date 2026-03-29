@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenClaw Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0f172a;
+            color: #e2e8f0;
+            line-height: 1.6;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        header {
+            text-align: center;
+            padding: 40px 0;
+            border-bottom: 1px solid #334155;
+            margin-bottom: 30px;
+        }
+        
+        h1 {
+            font-size: 2.5em;
+            background: linear-gradient(135deg, #60a5fa, #a78bfa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 10px;
+        }
+        
+        .subtitle {
+            color: #94a3b8;
+        }
+        
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .card {
+            background: #1e293b;
+            border-radius: 12px;
+            padding: 24px;
+            border: 1px solid #334155;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        .card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+        }
+        
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        
+        .card-title {
+            font-size: 1.1em;
+            font-weight: 600;
+            color: #f1f5f9;
+        }
+        
+        .status-badge {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: 500;
+        }
+        
+        .status-healthy {
+            background: #065f46;
+            color: #34d399;
+        }
+        
+        .status-warning {
+            background: #92400e;
+            color: #fbbf24;
+        }
+        
+        .status-critical {
+            background: #991b1b;
+            color: #f87171;
+        }
+        
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            padding: 12px 0;
+            border-bottom: 1px solid #334155;
+        }
+        
+        .metric:last-child {
+            border-bottom: none;
+        }
+        
+        .metric-label {
+            color: #94a3b8;
+        }
+        
+        .metric-value {
+            font-weight: 600;
+            color: #f1f5f9;
+        }
+        
+        .health-score {
+            text-align: center;
+            padding: 30px;
+        }
+        
+        .score-circle {
+            width: 150px;
+            height: 150px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 20px;
+            font-size: 2.5em;
+            font-weight: bold;
+            position: relative;
+        }
+        
+        .score-circle::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: 50%;
+            padding: 4px;
+            background: conic-gradient(from 0deg, #34d399 var(--score), #334155 var(--score));
+            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            -webkit-mask-composite: xor;
+            mask-composite: exclude;
+        }
+        
+        .score-inner {
+            width: 130px;
+            height: 130px;
+            border-radius: 50%;
+            background: #1e293b;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .logs {
+            background: #0f172a;
+            border-radius: 8px;
+            padding: 16px;
+            font-family: 'Monaco', 'Consolas', monospace;
+            font-size: 0.85em;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        
+        .log-entry {
+            padding: 4px 0;
+            border-bottom: 1px solid #1e293b;
+        }
+        
+        .log-time {
+            color: #64748b;
+        }
+        
+        .log-info {
+            color: #60a5fa;
+        }
+        
+        .log-error {
+            color: #f87171;
+        }
+        
+        .skills-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        
+        .skill-tag {
+            background: #334155;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 0.9em;
+        }
+        
+        .actions {
+            display: flex;
+            gap: 12px;
+            margin-top: 20px;
+        }
+        
+        .btn {
+            padding: 10px 20px;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            font-size: 0.95em;
+            transition: all 0.2s;
+        }
+        
+        .btn-primary {
+            background: #3b82f6;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #2563eb;
+        }
+        
+        .btn-secondary {
+            background: #334155;
+            color: #e2e8f0;
+        }
+        
+        .btn-secondary:hover {
+            background: #475569;
+        }
+        
+        footer {
+            text-align: center;
+            padding: 40px 0;
+            color: #64748b;
+            border-top: 1px solid #334155;
+            margin-top: 40px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🦾 OpenClaw Dashboard</h1>
+            <p class="subtitle">全自动 AI 系统监控仪表板</p>
+        </header>
+        
+        <div class="grid">
+            <!-- 健康评分 -->
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">系统健康</span>
+                    <span class="status-badge status-healthy">运行中</span>
+                </div>
+                <div class="health-score">
+                    <div class="score-circle" style="--score: 92%;">
+                        <div class="score-inner">
+                            <span id="health-score">92</span>
+                        </div>
+                    </div>
+                    <p>综合健康评分</p>
+                </div>
+            </div>
+            
+            <!-- 系统状态 -->
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">系统状态</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">运行时间</span>
+                    <span class="metric-value" id="uptime">2天 14小时</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">检查周期</span>
+                    <span class="metric-value" id="cycles">142</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">已安装技能</span>
+                    <span class="metric-value" id="skills-count">7</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">改进次数</span>
+                    <span class="metric-value" id="improvements">12</span>
+                </div>
+            </div>
+            
+            <!-- 子系统状态 -->
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">子系统状态</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">记忆系统</span>
+                    <span class="metric-value" style="color: #34d399;">健康 (95)</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">自我改进</span>
+                    <span class="metric-value" style="color: #34d399;">健康 (90)</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">技能流水线</span>
+                    <span class="metric-value" style="color: #34d399;">健康 (88)</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">OAC 核心</span>
+                    <span class="metric-value" style="color: #34d399;">健康 (94)</span>
+                </div>
+            </div>
+            
+            <!-- 已安装技能 -->
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">已安装技能</span>
+                </div>
+                <div class="skills-list">
+                    <span class="skill-tag">MASEL</span>
+                    <span class="skill-tag">Agent Browser</span>
+                    <span class="skill-tag">Skill Vetter</span>
+                    <span class="skill-tag">Capability Evolver</span>
+                    <span class="skill-tag">Image Cog</span>
+                    <span class="skill-tag">Image Tools</span>
+                    <span class="skill-tag">Office</span>
+                </div>
+                <div class="actions">
+                    <button class="btn btn-primary" onclick="discoverSkills()">发现新技能</button>
+                    <button class="btn btn-secondary" onclick="viewAllSkills()">查看全部</button>
+                </div>
+            </div>
+            
+            <!-- 最近日志 -->
+            <div class="card" style="grid-column: span 2;">
+                <div class="card-header">
+                    <span class="card-title">最近日志</span>
+                    <button class="btn btn-secondary" onclick="refreshLogs()">刷新</button>
+                </div>
+                <div class="logs" id="logs">
+                    <div class="log-entry">
+                        <span class="log-time">06:30:00</span>
+                        <span class="log-info">[OAC] 健康检查完成 - 评分: 92</span>
+                    </div>
+                    <div class="log-entry">
+                        <span class="log-time">06:25:00</span>
+                        <span class="log-info">[Memory] 维护完成 - 归档 3 条记忆</span>
+                    </div>
+                    <div class="log-entry">
+                        <span class="log-time">06:20:00</span>
+                        <span class="log-info">[SelfImproving] 自我改进完成 - 无问题</span>
+                    </div>
+                    <div class="log-entry">
+                        <span class="log-time">06:15:00</span>
+                        <span class="log-info">[SkillPipeline] 技能检查完成 - 7 个技能</span>
+                    </div>
+                    <div class="log-entry">
+                        <span class="log-time">06:10:00</span>
+                        <span class="log-info">[OAC] 自动化循环 #142 完成</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <footer>
+            <p>OpenClaw Automation Core v1.0 | 最后更新: <span id="last-update">2026-03-29 06:30:00</span></p>
+        </footer>
+    </div>
+    
+    <script>
+        // 模拟实时更新
+        function updateDashboard() {
+            // 这里应该调用实际的 API 获取数据
+            console.log('Updating dashboard...');
+        }
+        
+        function discoverSkills() {
+            alert('正在发现新技能...');
+        }
+        
+        function viewAllSkills() {
+            alert('查看所有技能');
+        }
+        
+        function refreshLogs() {
+            alert('刷新日志...');
+        }
+        
+        // 每 30 秒更新一次
+        setInterval(updateDashboard, 30000);
+        
+        // 初始化
+        updateDashboard();
+    </script>
+</body>
+</html>
