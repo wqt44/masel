@@ -148,36 +148,83 @@ const libreoffice = {
   }
 };
 
+function detectCreativeSuite(taskDescription) {
+  const task = taskDescription.toLowerCase();
+
+  const hasGimp = (
+    task.includes('图像') || task.includes('图片') || task.includes('photo') ||
+    task.includes('image') || task.includes('resize') || task.includes('filter') ||
+    task.includes('海报') || task.includes('poster') || task.includes('修图') ||
+    task.includes('抠图') || task.includes('retouch') || task.includes('加字')
+  );
+
+  const hasBlender = (
+    task.includes('3d') || task.includes('渲染') || task.includes('模型') ||
+    task.includes('blender') || task.includes('animation') || task.includes('render') ||
+    task.includes('mesh') || task.includes('材质') || task.includes('scene') ||
+    task.includes('场景') || task.includes('cube') || task.includes('sphere')
+  );
+
+  const hasOffice = (
+    task.includes('文档') || task.includes('word') || task.includes('excel') ||
+    task.includes('ppt') || task.includes('pdf') || task.includes('document') ||
+    task.includes('spreadsheet') || task.includes('presentation') ||
+    task.includes('writer') || task.includes('calc') || task.includes('impress') ||
+    task.includes('报告') || task.includes('提案') || task.includes('表格') ||
+    task.includes('演示')
+  );
+
+  const apps = [];
+  if (hasGimp) apps.push('gimp');
+  if (hasBlender) apps.push('blender');
+  if (hasOffice) apps.push('libreoffice');
+
+  return {
+    suite: 'local-creative-mcp-suite',
+    apps,
+    multiApp: apps.length > 1,
+    primaryApp: apps[0] || null
+  };
+}
+
 /**
  * 智能任务路由
- * 根据任务描述自动选择合适的 CLI 工具
+ * 根据任务描述自动选择合适的创作工具，并支持 Local Creative MCP Suite 多工具路由
  */
 async function routeTask(taskDescription, memory) {
+  const suite = detectCreativeSuite(taskDescription);
   const task = taskDescription.toLowerCase();
-  
-  // 图像相关任务
-  if (task.includes('图像') || task.includes('图片') || task.includes('photo') || 
-      task.includes('image') || task.includes('resize') || task.includes('filter')) {
-    memory?.recordContext?.('cli_anything', { app: 'gimp', task });
-    return { app: 'gimp', handler: gimp };
+
+  if (suite.multiApp) {
+    memory?.recordContext?.('local_creative_mcp_suite', {
+      route: suite,
+      task
+    });
+    return {
+      app: suite.primaryApp,
+      handler: suite.primaryApp === 'gimp' ? gimp : suite.primaryApp === 'blender' ? blender : libreoffice,
+      suite: suite.suite,
+      apps: suite.apps,
+      workflowType: 'multi-app'
+    };
   }
-  
-  // 3D/渲染相关任务
-  if (task.includes('3d') || task.includes('渲染') || task.includes('模型') || 
-      task.includes('blender') || task.includes('animation') || task.includes('render')) {
-    memory?.recordContext?.('cli_anything', { app: 'blender', task });
-    return { app: 'blender', handler: blender };
+
+  if (suite.primaryApp === 'gimp') {
+    memory?.recordContext?.('cli_anything', { app: 'gimp', task, suite: suite.suite });
+    return { app: 'gimp', handler: gimp, suite: suite.suite, apps: suite.apps, workflowType: 'single-app' };
   }
-  
-  // 文档相关任务
-  if (task.includes('文档') || task.includes('word') || task.includes('excel') || 
-      task.includes('ppt') || task.includes('pdf') || task.includes('document') ||
-      task.includes('spreadsheet') || task.includes('presentation')) {
-    memory?.recordContext?.('cli_anything', { app: 'libreoffice', handler: libreoffice });
-    return { app: 'libreoffice', handler: libreoffice };
+
+  if (suite.primaryApp === 'blender') {
+    memory?.recordContext?.('cli_anything', { app: 'blender', task, suite: suite.suite });
+    return { app: 'blender', handler: blender, suite: suite.suite, apps: suite.apps, workflowType: 'single-app' };
   }
-  
-  return { app: null, handler: null };
+
+  if (suite.primaryApp === 'libreoffice') {
+    memory?.recordContext?.('cli_anything', { app: 'libreoffice', task, suite: suite.suite });
+    return { app: 'libreoffice', handler: libreoffice, suite: suite.suite, apps: suite.apps, workflowType: 'single-app' };
+  }
+
+  return { app: null, handler: null, suite: suite.suite, apps: [], workflowType: 'unmatched' };
 }
 
 /**
@@ -190,10 +237,12 @@ async function routeTask(taskDescription, memory) {
  */
 async function cliAnythingWorkflow(steps, memory) {
   const results = [];
-  
+  const appsUsed = [...new Set(steps.map(step => step.app).filter(Boolean))];
+  const suite = appsUsed.length > 1 ? 'local-creative-mcp-suite' : null;
+
   for (const step of steps) {
     const { app, action, args = [] } = step;
-    
+
     let handler;
     switch (app) {
       case 'gimp': handler = gimp; break;
@@ -201,19 +250,27 @@ async function cliAnythingWorkflow(steps, memory) {
       case 'libreoffice': handler = libreoffice; break;
       default: throw new Error(`Unknown app: ${app}`);
     }
-    
+
     if (!handler[action]) {
       throw new Error(`Unknown action: ${action} for ${app}`);
     }
-    
+
     const result = await handler[action](...args);
-    results.push({ step, result });
-    
-    // 记录到 Viking 记忆
-    memory?.recordSuccess?.('cli_anything_workflow', { step, result });
+    results.push({ step, result, suite });
+
+    memory?.recordSuccess?.(
+      suite ? 'local_creative_mcp_suite_workflow' : 'cli_anything_workflow',
+      { step, result, suite, appsUsed }
+    );
   }
-  
-  return results;
+
+  return {
+    success: true,
+    suite,
+    appsUsed,
+    steps: results.length,
+    results
+  };
 }
 
 module.exports = {
@@ -221,6 +278,7 @@ module.exports = {
   gimp,
   blender,
   libreoffice,
+  detectCreativeSuite,
   routeTask,
   cliAnythingWorkflow
 };

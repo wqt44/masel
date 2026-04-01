@@ -1,6 +1,6 @@
 /**
- * Ultimate Memory System v2.0
- * L0-L3 分层记忆 + 冲突解决 + 智能存储管理
+ * Ultimate Memory System v1.0.1
+ * L0-L3 分层记忆 + 冲突解决 + 智能存储管理 + 错误模式记忆
  */
 
 const fs = require('fs');
@@ -80,7 +80,7 @@ function storeRawConversation(sessionId, userMessage, aiResponse, metadata = {})
   
   // 确保目录存在
   if (!fs.existsSync(CONFIG.rawLogPath)) {
-    fs.mkdirSync(CONFIG.rawLogPath, { recursive: true });
+    ensureDir(CONFIG.rawLogPath);
   }
   
   fs.appendFileSync(logFile, JSON.stringify(record) + '\n');
@@ -153,7 +153,7 @@ function generateDailySummary(date = new Date()) {
   // 保存摘要
   const summaryPath = path.join(__dirname, '../../memory/daily-summaries');
   if (!fs.existsSync(summaryPath)) {
-    fs.mkdirSync(summaryPath, { recursive: true });
+    ensureDir(summaryPath);
   }
   fs.writeFileSync(
     path.join(summaryPath, `${dateStr}.json`),
@@ -236,6 +236,32 @@ function detectConflicts(newMemory) {
   return conflicts;
 }
 
+function mergeStructuredMemory(existingMemory, newMemory) {
+  const existingLines = String(existingMemory.content || '').split('\n').map(x => x.trim()).filter(Boolean);
+  const newLines = String(newMemory.content || '').split('\n').map(x => x.trim()).filter(Boolean);
+  const mergedLines = [];
+  const seen = new Set();
+
+  for (const line of [...existingLines, ...newLines]) {
+    const key = line.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    mergedLines.push(line);
+  }
+
+  const merged = {
+    ...existingMemory,
+    content: mergedLines.join('\n'),
+    updated_at: new Date().toISOString(),
+    version: (existingMemory.version || 1) + 1,
+    merged_from: Array.from(new Set([...(existingMemory.merged_from || []), newMemory.id].filter(Boolean))),
+    source: Array.from(new Set([existingMemory.source, newMemory.source].filter(Boolean))).join(' | ') || existingMemory.source || newMemory.source,
+    confidence: Math.max(existingMemory.confidence || 0, newMemory.confidence || 0)
+  };
+
+  return merged;
+}
+
 /**
  * 解决冲突
  */
@@ -268,53 +294,21 @@ function resolveConflict(newMemory, existingMemory, resolution) {
   }
 }
 
-/**
- * 保存结构化记忆到文件
- */
+// 共享文件操作（从 memory-fs.js 导入，避免与 memory-dedup.js 重复）
+const memFS = require('./memory-fs');
+
 function saveStructuredMemory(memory) {
-  const memoriesPath = path.join(__dirname, '../../memory/structured');
-  if (!fs.existsSync(memoriesPath)) {
-    fs.mkdirSync(memoriesPath, { recursive: true });
-  }
-  
-  // 按类型分目录存储
-  const typePath = path.join(memoriesPath, memory.type);
-  if (!fs.existsSync(typePath)) {
-    fs.mkdirSync(typePath, { recursive: true });
-  }
-  
-  const filePath = path.join(typePath, `${memory.id}.json`);
-  fs.writeFileSync(filePath, JSON.stringify(memory, null, 2));
+  memFS.saveStructuredMemory(memory);
 }
 
 /**
  * 加载所有结构化记忆
  */
 function loadAllStructuredMemories() {
-  const memoriesPath = path.join(__dirname, '../../memory/structured');
-  if (!fs.existsSync(memoriesPath)) {
-    return [];
+  const memories = memFS.loadStructuredMemories();
+  for (const memory of memories) {
+    cache.activeMemories.set(memory.id, memory);
   }
-  
-  const memories = [];
-  const types = fs.readdirSync(memoriesPath);
-  
-  for (const type of types) {
-    const typePath = path.join(memoriesPath, type);
-    if (!fs.statSync(typePath).isDirectory()) continue;
-    
-    const files = fs.readdirSync(typePath).filter(f => f.endsWith('.json'));
-    for (const file of files) {
-      try {
-        const memory = JSON.parse(fs.readFileSync(path.join(typePath, file), 'utf-8'));
-        memories.push(memory);
-        cache.activeMemories.set(memory.id, memory);
-      } catch (e) {
-        console.error(`Error loading memory ${file}:`, e.message);
-      }
-    }
-  }
-  
   return memories;
 }
 
@@ -350,7 +344,7 @@ function cleanupExpiredMemories(dryRun = false) {
         // 归档到历史记录
         const archivePath = path.join(__dirname, '../../memory/archive');
         if (!fs.existsSync(archivePath)) {
-          fs.mkdirSync(archivePath, { recursive: true });
+          ensureDir(archivePath);
         }
         
         const fileName = `${memory.id}.json`;
@@ -426,6 +420,132 @@ function initialize() {
   };
 }
 
+/**
+ * v1.0.1: 记录错误模式
+ * 
+ * 将编码/执行中的错误记录为专门的 error_pattern 类型记忆，
+ * 权重高于普通事实，在编码类查询时自动获得额外加成。
+ * 
+ * @param {Object} pattern - 错误模式
+ * @param {string} pattern.scenario - 场景描述（如 "GIMP Script-Fu 批处理"）
+ * @param {string} pattern.error - 具体错误（如 "WHITE-IMAGE-FILL 常量不存在"）
+ * @param {string} pattern.correct - 正确做法（如 "用数字 2 代替"）
+ * @param {string} [pattern.context] - 上下文/技术栈
+ * @param {string} [pattern.source] - 来源（日期或对话ID）
+ */
+function recordErrorPattern({ scenario, error, correct, context, source }) {
+  const content = [
+    `场景：${scenario}`,
+    `错误：${error}`,
+    `正确：${correct}`,
+    context ? `上下文：${context}` : ''
+  ].filter(Boolean).join('\n');
+
+  const candidate = {
+    id: generateId('mem'),
+    type: 'error_pattern',
+    content,
+    importance: 'error_pattern',
+    source: source || `recorded-${new Date().toISOString().split('T')[0]}`,
+    confidence: 1.0,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    is_active: true,
+    version: 1
+  };
+
+  const conflicts = detectConflicts(candidate);
+  const duplicate = conflicts.find(c => c.conflict_type === 'duplicate');
+
+  if (duplicate && duplicate.existing_memory) {
+    const merged = mergeStructuredMemory(duplicate.existing_memory, candidate);
+    saveStructuredMemory(merged);
+    cache.activeMemories.set(merged.id, merged);
+    return {
+      status: 'merged',
+      memory: merged,
+      mergedInto: duplicate.existing_memory.id,
+      conflicts
+    };
+  }
+
+  return storeStructuredMemory('error_pattern', content, {
+    importance: 'error_pattern',  // 使用专用权重
+    source: source || `recorded-${new Date().toISOString().split('T')[0]}`,
+    confidence: 1.0,
+    checkConflict: true
+  });
+}
+
+// ─── Phase 1: L3 模式层 + 去重合并 ─────────────────────
+
+const { extractAll, getActivePatterns, decayPatterns } = require('./pattern-extractor');
+const { scanDuplicates, deduplicateAll } = require('./memory-dedup');
+
+// ─── Phase 3: 主动记忆引擎 ─────────────────────────────
+
+const {
+  shouldRecord, evaluateLifecycle, runSmartForgetting,
+  checkProactiveReminders, processConversation
+} = require('./active-memory');
+
+/**
+ * v2.0: 提取模式并保存
+ * 可在心跳/定期维护中调用
+ */
+function runPatternExtraction() {
+  return extractAll();
+}
+
+/**
+ * v2.0: 获取活跃模式
+ */
+function getPatterns(options) {
+  return getActivePatterns(options);
+}
+
+/**
+ * v2.0: 执行去重扫描
+ */
+function runDeduplication(options = {}) {
+  return deduplicateAll(options);
+}
+
+/**
+ * v2.0: 模式衰减（定期调用）
+ */
+function runPatternDecay(decayDays) {
+  return decayPatterns(decayDays);
+}
+
+/**
+ * v3.0: 智能记录判断
+ */
+function checkShouldRecord(userMsg, aiMsg) {
+  return shouldRecord(userMsg, aiMsg);
+}
+
+/**
+ * v3.0: 智能遗忘
+ */
+function runForgetting(options) {
+  return runSmartForgetting(options);
+}
+
+/**
+ * v3.0: 主动提醒检查
+ */
+function getProactiveReminders(context) {
+  return checkProactiveReminders(context);
+}
+
+/**
+ * v3.0: 自动处理对话
+ */
+function autoProcessConversation(userMsg, aiMsg, sessionId) {
+  return processConversation(userMsg, aiMsg, sessionId);
+}
+
 // 导出 API
 module.exports = {
   // L0 - 原始层
@@ -440,10 +560,29 @@ module.exports = {
   resolveConflict,
   loadAllStructuredMemories,
   
+  // L3 - 模式层 (Phase 1)
+  runPatternExtraction,
+  getPatterns,
+  runPatternDecay,
+  
+  // 去重合并 (Phase 1)
+  runDeduplication,
+  scanDuplicates,
+  
+  // 主动记忆引擎 (Phase 3)
+  checkShouldRecord,
+  runForgetting,
+  getProactiveReminders,
+  autoProcessConversation,
+  
   // 管理
   cleanupExpiredMemories,
   searchMemories,
   initialize,
+  
+  // v1.0.1: 错误模式
+  recordErrorPattern,
+  mergeStructuredMemory,
   
   // 配置
   CONFIG,

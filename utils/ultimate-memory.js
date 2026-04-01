@@ -15,6 +15,7 @@ const { ContextAwareMemory } = require('./context-memory.js');
 const { TimeDecayMemory } = require('./time-decay-memory.js');
 const { ProactiveConfirm } = require('./proactive-confirm.js');
 const { PredictiveMemory } = require('./predictive-memory.js');
+const { MaselSQLiteAdapter } = require('./sqlite-adapter.js');
 
 class UltimateMemory {
   constructor(userId) {
@@ -31,6 +32,15 @@ class UltimateMemory {
     });
     this.proactiveConfirm = new ProactiveConfirm(userId);
     this.predictiveMemory = new PredictiveMemory(userId);
+    
+    // v1.8.0: SQLite 长期记忆引擎
+    try {
+      this.sqlite = new MaselSQLiteAdapter();
+      console.log(`🗄️ [UltimateMemory] SQLite 长期记忆引擎已连接`);
+    } catch (e) {
+      console.warn(`⚠️ [UltimateMemory] SQLite 初始化失败，降级到纯 JSON: ${e.message}`);
+      this.sqlite = null;
+    }
     
     // 对话计数
     this.conversationCount = 0;
@@ -73,10 +83,30 @@ class UltimateMemory {
       });
     }
     
-    // 7. 主动确认检查
+    // 7. SQLite 长期记忆双写
+    if (this.sqlite) {
+      for (const item of allExtracted) {
+        try {
+          const category = this.sqlite._inferCategory(item.type || item.key);
+          const tier = item.weight >= 0.9 ? 'critical' : item.weight >= 0.7 ? 'important' : 'temporary';
+          this.sqlite.store({
+            category,
+            tier,
+            key: item.key,
+            value: item.value,
+            type: item.type || 'fact',
+            weight: item.weight,
+            context: item.context || '',
+            source: new Date().toISOString().split('T')[0]
+          });
+        } catch (e) { /* 静默失败，不影响主流程 */ }
+      }
+    }
+    
+    // 8. 主动确认检查
     this.checkForConfirmation(message);
     
-    // 8. 预测性记忆
+    // 9. 预测性记忆
     this.predictiveMemory.recordMessage(message, allExtracted);
     
     return allExtracted.length;
@@ -132,37 +162,33 @@ class UltimateMemory {
     return this.pendingConfirmations;
   }
 
-  // 回忆（智能综合）
+  // 回忆（智能综合 + SQLite）
   recall(query) {
     console.log(`\n🔍 [UltimateMemory] 回忆: "${query}"`);
     
     const results = [];
+    const seenValues = new Set();
     
     // 1. 上下文感知回忆
     const contextResults = this.contextMemory.recall(query);
     for (const r of contextResults) {
-      results.push({
-        value: r.value,
-        type: r.type,
-        weight: r.weight,
-        source: 'context',
-        relevance: r.relevance,
-        context: r.context
-      });
+      if (!seenValues.has(r.value)) {
+        seenValues.add(r.value);
+        results.push({
+          value: r.value, type: r.type, weight: r.weight,
+          source: 'context', relevance: r.relevance, context: r.context
+        });
+      }
     }
     
     // 2. 基础记忆回忆
     const baseResults = this.smartMemory.recall(query);
     for (const r of baseResults) {
-      // 检查是否已存在
-      const exists = results.some(existing => existing.value === r.value);
-      if (!exists) {
+      if (!seenValues.has(r.value)) {
+        seenValues.add(r.value);
         results.push({
-          value: r.value,
-          type: r.type,
-          weight: r.weight,
-          source: 'base',
-          relevance: r.relevance
+          value: r.value, type: r.type, weight: r.weight,
+          source: 'base', relevance: r.relevance
         });
       }
     }
@@ -170,28 +196,41 @@ class UltimateMemory {
     // 3. 时间衰减回忆
     const decayResults = this.timeDecayMemory.recall(query, 5);
     for (const r of decayResults) {
-      const exists = results.some(existing => existing.value === r.value);
-      if (!exists) {
+      if (!seenValues.has(r.value)) {
+        seenValues.add(r.value);
         results.push({
-          value: r.value,
-          type: r.type,
-          weight: r.currentWeight,
-          source: 'time-decay',
-          relevance: 0.5,
-          daysAgo: r.decay.daysAgo,
-          isRecent: r.decay.isRecent
+          value: r.value, type: r.type, weight: r.currentWeight,
+          source: 'time-decay', relevance: 0.5,
+          daysAgo: r.decay.daysAgo, isRecent: r.decay.isRecent
         });
       }
     }
     
-    // 4. 按综合分数排序
+    // 4. SQLite 长期记忆查询
+    if (this.sqlite) {
+      try {
+        const sqliteResults = this.sqlite.search(query, { limit: 5 });
+        for (const r of sqliteResults) {
+          if (!seenValues.has(r.value)) {
+            seenValues.add(r.value);
+            results.push({
+              value: r.value, type: r.type, weight: r.decay_score * r.weight,
+              source: 'sqlite', relevance: 0.8,
+              tier: r.tier, category: r.category
+            });
+          }
+        }
+      } catch (e) { /* 静默 */ }
+    }
+    
+    // 5. 按综合分数排序
     results.sort((a, b) => {
       const scoreA = (a.relevance || 0.5) * a.weight;
       const scoreB = (b.relevance || 0.5) * b.weight;
       return scoreB - scoreA;
     });
     
-    return results.slice(0, 5);
+    return results.slice(0, 10);
   }
 
   // 获取完整画像
@@ -298,6 +337,38 @@ function ultimatePredict() {
   return ultimateMemory.getPrediction();
 }
 
+// v1.8.0: 直接访问 SQLite 引擎
+function ultimateSQLite() {
+  if (!ultimateMemory || !ultimateMemory.sqlite) return null;
+  return ultimateMemory.sqlite;
+}
+
+// v1.8.0: SQLite 全文搜索
+function ultimateSearch(query, opts) {
+  if (!ultimateMemory || !ultimateMemory.sqlite) return [];
+  return ultimateMemory.sqlite.search(query, opts);
+}
+
+// v1.8.0: 运行衰减 + 清理
+function ultimateDecay() {
+  if (!ultimateMemory || !ultimateMemory.sqlite) return null;
+  const decayed = ultimateMemory.sqlite.runDecay();
+  const pruned = ultimateMemory.sqlite.prune();
+  return { decayed, pruned };
+}
+
+// v1.8.0: 导出完整数据
+function ultimateExport() {
+  if (!ultimateMemory || !ultimateMemory.sqlite) return null;
+  return ultimateMemory.sqlite.exportToJSON();
+}
+
+// v1.8.0: SQLite 统计
+function ultimateSQLiteStats() {
+  if (!ultimateMemory || !ultimateMemory.sqlite) return null;
+  return ultimateMemory.sqlite.stats();
+}
+
 module.exports = {
   UltimateMemory,
   initUltimateMemory,
@@ -307,7 +378,13 @@ module.exports = {
   ultimateConfirm,
   ultimateReject,
   ultimateGetPending,
-  ultimatePredict
+  ultimatePredict,
+  // v1.8.0
+  ultimateSQLite,
+  ultimateSearch,
+  ultimateDecay,
+  ultimateExport,
+  ultimateSQLiteStats,
 };
 
 // 测试

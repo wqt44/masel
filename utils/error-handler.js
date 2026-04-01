@@ -251,7 +251,10 @@ class ErrorHandler {
     }
     
     const content = fs.readFileSync(ERROR_LOG_PATH, 'utf-8');
-    const lines = content.trim().split('\n').filter(l => l);
+    const lines = content
+      .split('\n')
+      .map(l => l.trim())
+      .filter(l => l && l !== '[]');
     
     const cutoff = Date.now() - timeRange;
     const stats = {
@@ -297,7 +300,10 @@ class ErrorHandler {
     if (!fs.existsSync(ERROR_LOG_PATH)) return;
     
     const content = fs.readFileSync(ERROR_LOG_PATH, 'utf-8');
-    const lines = content.trim().split('\n').filter(l => l);
+    const lines = content
+      .split('\n')
+      .map(l => l.trim())
+      .filter(l => l && l !== '[]');
     
     const cutoff = Date.now() - maxAge;
     const recentLines = [];
@@ -316,7 +322,11 @@ class ErrorHandler {
       }
     }
     
-    fs.writeFileSync(ERROR_LOG_PATH, recentLines.join('\n') + '\n');
+    if (recentLines.length > 0) {
+      fs.writeFileSync(ERROR_LOG_PATH, recentLines.join('\n') + '\n');
+    } else {
+      fs.writeFileSync(ERROR_LOG_PATH, '');
+    }
     
     return {
       before: lines.length,

@@ -1,6 +1,6 @@
 # MASEL - Multi-Agent System with Error Learning
 
-## 🎉🎉🎉 **v1.7.0 - OpenClaw Integration (已进化!)** 🎉🎉🎉
+## 🎉🎉🎉 **v1.9.1 - Unified Memory + Modular Agents (已进化!)** 🎉🎉🎉
 
 ### 📊 今日进化成果 (2026-03-29)
 
@@ -409,10 +409,38 @@ await maselLearn({
 
 // Check status
 const status = await maselStatus({});
+console.log(status.clawteam_overlay_text);
 
 // Manage souls
 const souls = await maselSouls({ action: "list" });
 ```
+
+## ClawTeam Overlay Monitoring
+
+MASEL now exposes a lightweight overlay monitoring layer for ClawTeam failure protection.
+
+- repeated failure / cooldown can move a task into `paused_pending_leader`
+- leader fallback notifications are recorded and surfaced through overlay state
+- task and board views can be merged without changing native ClawTeam status enums
+
+Quick examples:
+
+```bash
+# JSON merged task list
+node skills/masel/scripts/clawteam-overlay-view.js --team my-team --tasks
+
+# Human-readable terminal summary
+node skills/masel/scripts/clawteam-overlay-view.js --team my-team --board --text
+
+# One-time metadata migration for existing registry files
+node skills/masel/scripts/migrate-clawteam-registry-meta.js --dry-run
+node skills/masel/scripts/migrate-clawteam-registry-meta.js --apply
+```
+
+`masel.status()` / `maselStatus()` now returns:
+
+- `clawteam_overlay` — structured summary across registry files
+- `clawteam_overlay_text` — ready-to-display text summary for control UI / terminal
 
 ## 🏆 Final Stats
 

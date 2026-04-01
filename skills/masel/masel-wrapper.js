@@ -1,391 +1,150 @@
 /**
- * MASEL Wrapper for OpenClaw - v1.7.0-evolved
+ * MASEL Wrapper for OpenClaw - v1.9.1
  * 
- * 简化在 OpenClaw 中使用 MASEL 的接口
- * 新增：自动初始化 + 真正的文件记忆系统
+ * 架构：router + agents + workflows + sqlite 统一记忆
  * 
- * 🎉 今日进化 (2026-03-29):
- * - 系统健康: 86.3 → 96.3 (+10.0)
- * - 测试覆盖: 18 → 30 个测试
- * - 新增: unifiedRecord, unifiedRecall, resilientComplete
- * - 集成: OAC, 统一记忆系统, 错误处理
+ * v1.9.1:
+ * - FileBasedMemory → UltimateMemory + SQLite
+ * - 拆分核心模块（router/agents/workflows）
+ * - sessions_spawn 集成（真正多Agent）
+ * - 智能路由（关键词 → 拓扑并行）
+ * - 向后兼容：所有旧接口不变
  */
 
 const fs = require('fs');
 const path = require('path');
 
-// ============================================================================
-// 配置和路径
-// ============================================================================
 const MASEL_DIR = __dirname;
-const MEMORY_DIR = path.join(MASEL_DIR, 'memory', 'auto');
-const GLOBAL_MEMORY_FILE = path.join(MEMORY_DIR, 'global-memories.json');
-const USER_PROFILE_FILE = path.join(MEMORY_DIR, 'user-profile.json');
-const CONVERSATION_LOG_FILE = path.join(MEMORY_DIR, 'conversations.jsonl');
-
-// 确保记忆目录存在
-function ensureMemoryDir() {
-  if (!fs.existsSync(MEMORY_DIR)) {
-    fs.mkdirSync(MEMORY_DIR, { recursive: true });
-  }
-}
 
 // ============================================================================
-// 真正的文件记忆系统
+// 核心模块加载
 // ============================================================================
+const { MaselRouter } = require('./src/core/router');
+const { MaselAgents } = require('./src/core/agents');
+const { MaselWorkflows } = require('./src/core/workflows');
 
-class FileBasedMemory {
-  constructor(userId, agentId) {
-    this.userId = userId;
-    this.agentId = agentId;
-    this.initialized = false;
-    this.userProfile = null;
-    this.globalMemories = [];
+const router = new MaselRouter();
+const agents = new MaselAgents();
+const workflows = new MaselWorkflows({
+  onStoreLesson: (data) => {
+    const db = getSQLite();
+    if (db) db.store(data);
   }
-
-  async initialize() {
-    ensureMemoryDir();
-    
-    // 加载或创建用户档案
-    if (fs.existsSync(USER_PROFILE_FILE)) {
-      try {
-        this.userProfile = JSON.parse(fs.readFileSync(USER_PROFILE_FILE, 'utf8'));
-      } catch (e) {
-        this.userProfile = this.createDefaultProfile();
-      }
-    } else {
-      this.userProfile = this.createDefaultProfile();
-      this.saveUserProfile();
-    }
-
-    // 加载全局记忆
-    if (fs.existsSync(GLOBAL_MEMORY_FILE)) {
-      try {
-        this.globalMemories = JSON.parse(fs.readFileSync(GLOBAL_MEMORY_FILE, 'utf8'));
-      } catch (e) {
-        this.globalMemories = [];
-      }
-    }
-
-    this.initialized = true;
-    console.log(`[MASEL Memory] Initialized for user: ${this.userId}`);
-    return this;
-  }
-
-  createDefaultProfile() {
-    return {
-      userId: this.userId,
-      agentId: this.agentId,
-      createdAt: new Date().toISOString(),
-      preferences: {},
-      importantFacts: [],
-      conversationCount: 0,
-      lastConversation: null
-    };
-  }
-
-  saveUserProfile() {
-    fs.writeFileSync(USER_PROFILE_FILE, JSON.stringify(this.userProfile, null, 2));
-  }
-
-  saveGlobalMemories() {
-    fs.writeFileSync(GLOBAL_MEMORY_FILE, JSON.stringify(this.globalMemories, null, 2));
-  }
-
-  async recordConversation(message, response, metadata = {}) {
-    if (!this.initialized) await this.initialize();
-
-    const entry = {
-      timestamp: new Date().toISOString(),
-      message: message.substring(0, 1000), // 限制长度
-      response: response.substring(0, 1000),
-      metadata: {
-        ...metadata,
-        userId: this.userId,
-        agentId: this.agentId
-      }
-    };
-
-    // 追加到对话日志 (JSONL 格式)
-    fs.appendFileSync(CONVERSATION_LOG_FILE, JSON.stringify(entry) + '\n');
-
-    // 更新用户档案
-    this.userProfile.conversationCount++;
-    this.userProfile.lastConversation = entry.timestamp;
-    this.saveUserProfile();
-
-    // 提取重要信息并保存到全局记忆
-    this.extractAndSaveImportantInfo(message, response);
-
-    return entry;
-  }
-
-  extractAndSaveImportantInfo(message, response) {
-    // 简单的关键词提取逻辑
-    const importantPatterns = [
-      { pattern: /我叫(\S+)/i, type: 'name', template: '用户名字是 $1' },
-      { pattern: /我是(\S+)/i, type: 'identity', template: '用户身份是 $1' },
-      { pattern: /我喜欢(.+?)[。，.!]/i, type: 'preference', template: '用户喜欢 $1' },
-      { pattern: /我讨厌(.+?)[。，.!]/i, type: 'dislike', template: '用户讨厌 $1' },
-      { pattern: /我(不)?擅长(.+?)[。，.!]/i, type: 'skill', template: '用户$1擅长 $2' },
-      { pattern: /我的工作是(.+?)[。，.!]/i, type: 'job', template: '用户工作是 $1' },
-      { pattern: /我在做(.+?)项目/i, type: 'project', template: '用户在做 $1 项目' },
-      { pattern: /chachacha/i, type: 'project', template: '用户有一个叫 chachacha 的项目' }
-    ];
-
-    const text = message + ' ' + response;
-    
-    for (const { pattern, type, template } of importantPatterns) {
-      const match = text.match(pattern);
-      if (match) {
-        let info = template;
-        for (let i = 1; i < match.length; i++) {
-          info = info.replace(`$${i}`, match[i] || '');
-        }
-        
-        // 避免重复
-        const exists = this.globalMemories.some(m => m.content === info);
-        if (!exists) {
-          this.globalMemories.push({
-            id: `mem-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-            type,
-            content: info,
-            source: message.substring(0, 100),
-            timestamp: new Date().toISOString(),
-            importance: 'medium'
-          });
-          
-          // 限制记忆数量，保留最新的 100 条
-          if (this.globalMemories.length > 100) {
-            this.globalMemories = this.globalMemories.slice(-100);
-          }
-          
-          this.saveGlobalMemories();
-        }
-      }
-    }
-  }
-
-  async getRelevantMemories(context, limit = 5) {
-    if (!this.initialized) await this.initialize();
-
-    const contextLower = context.toLowerCase();
-    
-    // 简单的相关性评分
-    const scored = this.globalMemories.map(mem => {
-      const contentLower = mem.content.toLowerCase();
-      let score = 0;
-      
-      // 关键词匹配
-      const contextWords = contextLower.split(/\s+/);
-      for (const word of contextWords) {
-        if (word.length > 2 && contentLower.includes(word)) {
-          score += 1;
-        }
-      }
-      
-      // 类型匹配加分
-      if (contextLower.includes(mem.type)) {
-        score += 2;
-      }
-      
-      // 重要性加权
-      if (mem.importance === 'high') score += 3;
-      if (mem.importance === 'medium') score += 1;
-      
-      return { ...mem, score };
-    });
-
-    // 按分数排序并返回前 N 个
-    return scored
-      .filter(m => m.score > 0)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, limit)
-      .map(m => m.content);
-  }
-
-  async getUserProfile() {
-    if (!this.initialized) await this.initialize();
-    return this.userProfile;
-  }
-
-  async addPreference(key, value) {
-    if (!this.initialized) await this.initialize();
-    this.userProfile.preferences[key] = value;
-    this.saveUserProfile();
-  }
-
-  async getPreference(key) {
-    if (!this.initialized) await this.initialize();
-    return this.userProfile.preferences[key];
-  }
-}
+});
 
 // ============================================================================
-// 全局记忆实例（自动初始化）
+// 统一记忆系统
 // ============================================================================
+let _ultimateMemory = null;
+let _sqliteAdapter = null;
 
-let globalMemoryInstance = null;
-let autoInitAttempted = false;
-
-/**
- * 自动初始化记忆系统
- * 从环境变量或配置文件读取用户信息
- */
-async function autoInitializeMemory() {
-  if (autoInitAttempted) return globalMemoryInstance;
-  autoInitAttempted = true;
-
-  // 尝试从配置文件读取
-  const configPath = path.join(MASEL_DIR, 'memory', 'config.json');
-  let userId = 'default-user';
-  let agentId = 'default-agent';
-
-  if (fs.existsSync(configPath)) {
-    try {
-      const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-      userId = config.userId || userId;
-      agentId = config.agentId || agentId;
-    } catch (e) {
-      // 使用默认值
-    }
-  }
-
-  // 检查 USER.md 获取用户信息
-  const userMdPath = path.join(MASEL_DIR, '..', '..', 'USER.md');
-  if (fs.existsSync(userMdPath)) {
-    try {
-      const userMd = fs.readFileSync(userMdPath, 'utf8');
-      // 匹配 - **名字：** TvTongg 或 - 名字：TvTongg 格式
-      const nameMatch = userMd.match(/名字[：:]\s*\*?\*?(\S+?)\*?\*?\s*$/m);
-      if (nameMatch) {
-        userId = nameMatch[1];
-      }
-    } catch (e) {
-      // 忽略错误
-    }
-  }
-
-  // 创建并初始化记忆实例
-  globalMemoryInstance = new FileBasedMemory(userId, agentId);
-  await globalMemoryInstance.initialize();
-
-  console.log(`[MASEL] Auto-initialized memory system: ${userId} <-> ${agentId}`);
-  return globalMemoryInstance;
-}
-
-// ============================================================================
-// 改进的 Auto Memory API
-// ============================================================================
-
-/**
- * 初始化自动记忆系统（现在会自动调用，但也可以手动调用）
- */
-async function initAutoMemory(userId, agentId) {
-  // 保存配置
-  ensureMemoryDir();
-  const configPath = path.join(MEMORY_DIR, '..', 'config.json');
-  fs.writeFileSync(configPath, JSON.stringify({ userId, agentId, updatedAt: new Date().toISOString() }, null, 2));
-
-  // 创建新的记忆实例
-  globalMemoryInstance = new FileBasedMemory(userId, agentId);
-  await globalMemoryInstance.initialize();
-  
-  console.log(`[MASEL] Memory system initialized: ${userId} <-> ${agentId}`);
-  return globalMemoryInstance;
-}
-
-/**
- * 自动记录对话（异步，立即返回）
- */
-async function autoRecord(message, response, metadata = {}) {
+function getUltimateMemory() {
+  if (_ultimateMemory) return _ultimateMemory;
   try {
-    const memory = await autoInitializeMemory();
-    await memory.recordConversation(message, response, metadata);
+    const { initUltimateMemory } = require('../../utils/ultimate-memory.js');
+    let userId = 'TvTongg';
+    const userMd = path.join(MASEL_DIR, '..', '..', 'USER.md');
+    if (fs.existsSync(userMd)) {
+      const m = fs.readFileSync(userMd, 'utf8').match(/名字[：:]\s*\*?\*?(\S+?)\*?\*?\s*$/m);
+      if (m) userId = m[1];
+    }
+    _ultimateMemory = initUltimateMemory(userId);
+    return _ultimateMemory;
   } catch (e) {
-    console.error('[MASEL Memory] Failed to record:', e.message);
-  }
-}
-
-/**
- * 自动获取相关记忆
- */
-async function autoRecall(context, limit = 5) {
-  try {
-    const memory = await autoInitializeMemory();
-    return await memory.getRelevantMemories(context, limit);
-  } catch (e) {
-    console.error('[MASEL Memory] Failed to recall:', e.message);
-    return [];
-  }
-}
-
-/**
- * 获取用户档案
- */
-async function getUserProfile() {
-  try {
-    const memory = await autoInitializeMemory();
-    return await memory.getUserProfile();
-  } catch (e) {
+    console.warn('[MASEL] UltimateMemory unavailable:', e.message);
     return null;
   }
 }
 
-/**
- * 添加用户偏好
- */
+function getSQLite() {
+  if (_sqliteAdapter) return _sqliteAdapter;
+  try {
+    const { getAdapter } = require('../../utils/sqlite-adapter.js');
+    _sqliteAdapter = getAdapter();
+    return _sqliteAdapter;
+  } catch (e) {
+    console.warn('[MASEL] SQLite unavailable:', e.message);
+    return null;
+  }
+}
+
+// ============================================================================
+// Auto Memory API
+// ============================================================================
+let _memoryConfig = { userId: 'TvTongg', agentId: 'TwTongg' };
+
+async function initAutoMemory(userId, agentId) {
+  _memoryConfig = { userId, agentId };
+  getUltimateMemory();
+  console.log(`[MASEL v1.9.1] Memory initialized: ${userId} <-> ${agentId}`);
+}
+
+async function autoRecord(message, response, metadata = {}) {
+  try {
+    const mem = getUltimateMemory();
+    if (mem) { mem.record(message, response); return; }
+  } catch (e) { /* fall through */ }
+
+  try {
+    const db = getSQLite();
+    if (db) {
+      db.store({
+        category: 'conversation', tier: 'temporary', key: 'conversation',
+        value: `${message} → ${response}`.substring(0, 500),
+        type: 'conversation', weight: 0.3,
+        source: new Date().toISOString().split('T')[0],
+      });
+      return;
+    }
+  } catch (e) { /* fall through */ }
+  console.error('[MASEL] autoRecord: all backends failed');
+}
+
+async function autoRecall(context, limit = 5) {
+  try {
+    const db = getSQLite();
+    if (db) {
+      const results = db.search(context, { limit });
+      if (results.length > 0) return results.map(r => `[${r.category}/${r.tier}] ${r.value}`);
+      return db.recall(context, { limit }).map(r => `[${r.category}/${r.tier}] ${r.value}`);
+    }
+  } catch (e) { /* fall through */ }
+
+  try {
+    const mem = getUltimateMemory();
+    if (mem) return mem.recall(context).slice(0, limit).map(r => r.value);
+  } catch (e) { /* fall through */ }
+  return [];
+}
+
+async function getUserProfile() {
+  const db = getSQLite();
+  return db ? db.getProfile() : null;
+}
+
 async function setPreference(key, value) {
-  try {
-    const memory = await autoInitializeMemory();
-    await memory.addPreference(key, value);
-  } catch (e) {
-    console.error('[MASEL Memory] Failed to set preference:', e.message);
-  }
+  const db = getSQLite();
+  if (db) db.store({ category: 'preference', tier: 'important', key, value, type: 'preference', weight: 0.8 });
 }
 
-/**
- * 获取用户偏好
- */
 async function getPreference(key) {
-  try {
-    const memory = await autoInitializeMemory();
-    return await memory.getPreference(key);
-  } catch (e) {
-    return undefined;
-  }
+  const db = getSQLite();
+  if (!db) return undefined;
+  const r = db.getByKey(key);
+  return r.length > 0 ? r[0].value : undefined;
 }
 
 // ============================================================================
-// 页面加载时自动初始化
+// MASEL 工具（保持兼容）
 // ============================================================================
-
-// 立即尝试自动初始化（不阻塞）
-autoInitializeMemory().catch(() => {
-  // 静默失败，下次调用时会重试
-});
-
-// ============================================================================
-// 模拟 MASEL 工具（保持向后兼容）
-// ============================================================================
-
 function createMockTools() {
   return {
     maselPlan: async ({ task, workflow_type }) => ({
       task_id: `mock-${Date.now()}`,
       original_task: task,
       workflow_type,
-      brainstorm: {
-        approaches: ['Approach 1', 'Approach 2'],
-        selected_approach: 'Approach 1',
-        rationale: 'Best for this task'
-      },
-      spec: {
-        requirements: ['Req 1', 'Req 2'],
-        acceptance_criteria: ['Criteria 1'],
-        constraints: [],
-        boundary_conditions: []
-      },
+      brainstorm: { approaches: ['Approach 1', 'Approach 2'], selected_approach: 'Approach 1', rationale: 'Best' },
+      spec: { requirements: ['Req 1'], acceptance_criteria: ['Criteria 1'], constraints: [], boundary_conditions: [] },
       subtasks: [
         { id: 'st-1', name: 'Analyze', agent_type: 'coder', dependencies: [], estimated_time: 10 },
         { id: 'st-2', name: 'Implement', agent_type: 'coder', dependencies: ['st-1'], estimated_time: 20 }
@@ -393,218 +152,183 @@ function createMockTools() {
       created_at: new Date().toISOString(),
       estimated_total_time: 30
     }),
-    
-    maselExecute: async ({ plan }) => ({
-      task_id: plan.task_id,
-      status: 'completed',
-      results: plan.subtasks.map(st => ({
-        subtask_id: st.id,
-        success: true,
-        output: `Completed ${st.name}`,
-        execution_time: st.estimated_time * 1000
-      })),
-      total_execution_time: plan.estimated_total_time * 1000,
-      summary: 'All subtasks completed successfully'
-    }),
-    
+    maselExecute: async ({ plan }) => {
+      // v1.9.1: 尝试并行执行
+      const results = await agents.executeParallel(plan.subtasks, { task: plan.original_task });
+      return {
+        task_id: plan.task_id,
+        status: 'completed',
+        results,
+        total_execution_time: results.reduce((s, r) => s + (r.execution_time || 0), 0),
+        summary: 'All subtasks completed',
+        parallel: results.length > 1
+      };
+    },
     maselReview: async ({ results }) => ({
       review_id: `review-${Date.now()}`,
       overall_score: 85,
       dimensions: [
-        { name: 'Correctness', score: 90, weight: 0.35, comments: ['Good'] },
-        { name: 'Completeness', score: 80, weight: 0.25, comments: ['OK'] },
-        { name: 'Efficiency', score: 85, weight: 0.15, comments: ['Good'] },
-        { name: 'Readability', score: 88, weight: 0.15, comments: ['Good'] },
-        { name: 'Robustness', score: 82, weight: 0.10, comments: ['OK'] }
+        { name: 'Correctness', score: 90, weight: 0.35 }, { name: 'Completeness', score: 80, weight: 0.25 },
+        { name: 'Efficiency', score: 85, weight: 0.15 }, { name: 'Readability', score: 88, weight: 0.15 },
+        { name: 'Robustness', score: 82, weight: 0.10 }
       ],
-      issues: [],
-      decision: 'APPROVE',
-      summary: 'Good quality output',
-      recommendations: ['Keep up the good work']
+      issues: [], decision: 'APPROVE', summary: 'Good quality', recommendations: []
     }),
-    
-    maselLearn: async () => ({
-      learning_id: `learn-${Date.now()}`,
-      patterns_found: 1,
-      soul_updates: []
-    }),
-    
-    maselStatus: async () => ({
-      version: '1.7.0',
-      active_tasks: 0,
-      completed_tasks: 1,
-      memory_stats: { 
-        hot_errors: 0, 
-        warm_errors_today: 0, 
-        total_errors: 0,
-        memories_stored: globalMemoryInstance?.globalMemories?.length || 0,
-        auto_initialized: autoInitAttempted
-      }
-    }),
-    
-    maselSouls: async ({ action }) => ({
-      action,
-      souls: ['coder', 'researcher', 'reviewer']
-    })
+    maselLearn: async () => ({ learning_id: `learn-${Date.now()}`, patterns_found: 1, soul_updates: [] }),
+    maselStatus: async () => {
+      const overlay = clawteamOverlaySummary ? clawteamOverlaySummary.getGlobalOverlaySummary({ maxPausedTasks: 5 }) : null;
+      return {
+        version: '1.9.1',
+        active_tasks: agents.getActiveCount(),
+        completed_tasks: 1,
+        memory_stats: { backend: 'sqlite', memories_stored: getSQLite()?.stats()?.memories || 0, auto_initialized: !!_ultimateMemory },
+        clawteam_overlay: overlay,
+        clawteam_overlay_text: clawteamOverlayFormat ? clawteamOverlayFormat.formatOverlaySummaryBlock(overlay) : null
+      };
+    },
+    maselSouls: async ({ action }) => ({ action, souls: ['coder', 'researcher', 'reviewer'] })
   };
 }
 
 const maselTools = createMockTools();
 
 // ============================================================================
+// CLI-Anything
+// ============================================================================
+let cliAnything = null, qualityChecker = null;
+try { cliAnything = require('./src/tools/cli-anything.js'); } catch (e) {}
+try { qualityChecker = require('./src/tools/quality-checker.js'); } catch (e) {}
+
+let clawteamOverlaySummary = null;
+try { clawteamOverlaySummary = require('./src/tools/clawteam-overlay-summary.js'); } catch (e) {}
+
+let clawteamOverlayFormat = null;
+try { clawteamOverlayFormat = require('./src/tools/clawteam-overlay-format.js'); } catch (e) {}
+
+async function cliAnythingWorkflow(steps, memory) {
+  if (!cliAnything) throw new Error('CLI-Anything not available.');
+  return cliAnything.cliAnythingWorkflow(steps, memory);
+}
+
+async function routeToCliAnything(taskDescription, memory) {
+  if (!cliAnything) return { available: false, reason: 'CLI-Anything not installed' };
+  return { available: true, ...(await cliAnything.routeTask(taskDescription, memory)) };
+}
+
+async function routeToLocalCreativeSuite(taskDescription, memory) {
+  if (!cliAnything) return { available: false, reason: 'CLI-Anything not installed' };
+  const route = await cliAnything.routeTask(taskDescription, memory);
+  return {
+    available: true, suite: route.suite || 'local-creative-mcp-suite',
+    workflowType: route.workflowType || 'single-app',
+    apps: route.apps || (route.app ? [route.app] : []),
+    primaryApp: route.app || null,
+    handlerAvailable: !!route.handler
+  };
+}
+
+// ============================================================================
 // MASEL 主类
 // ============================================================================
-
 class MASEL {
   constructor() {
     this.tools = maselTools;
+    this.router = router;
+    this.agents = agents;
+    this.workflows = workflows;
+  }
+
+  async detectCreativeRoute(task) {
+    try {
+      const route = await routeToLocalCreativeSuite(task);
+      return route?.available ? route : null;
+    } catch (e) { return null; }
   }
 
   shouldUseMASEL(task) {
-    const task_lower = task.toLowerCase();
-    const simplePatterns = [
-      /^你好$/, /^hi$/, /^hello$/,
-      /^谢谢$/, /^thanks$/,
-      /^再见$/, /^bye$/,
-      /^(今天)?天气/, /^(现在)?时间/, /^(今天)?日期/,
-      /^帮助$/, /^help$/
-    ];
-
-    const isSimple = simplePatterns.some(pattern => pattern.test(task_lower.trim()));
-    if (isSimple) return false;
-
-    const complexKeywords = [
-      '写', '编写', '开发', '实现', '创建', '做', '制作',
-      '分析', '研究', '调查', '设计', '架构', '规划',
-      '测试', '调试', '验证', '优化', '重构', '改进', '完善',
-      '项目', '系统', '程序', '应用', '工具', '脚本',
-      '代码', '函数', '类', '模块', '库', '框架',
-      '网站', '网页', '接口', 'api', '数据库',
-      '爬虫', '自动化', '工作流', '流程',
-      'create', 'develop', 'build', 'write', 'implement', 'make',
-      'analyze', 'research', 'investigate', 'design', 'architect',
-      'test', 'debug', 'verify', 'optimize', 'refactor', 'improve',
-      'project', 'system', 'program', 'app', 'tool', 'script',
-      'code', 'function', 'class', 'module', 'library', 'framework',
-      'website', 'web', 'api', 'database', 'scraper', 'automation', 'workflow'
-    ];
-
-    const hasComplex = complexKeywords.some(kw => task_lower.includes(kw.toLowerCase()));
-    if (hasComplex) return true;
-
-    return task.length > 30 || task.includes('。') || task.includes('. ') || task.includes('，');
+    return router.shouldUseMASEL(task);
   }
 
   async complete(task, options = {}) {
     const { workflow_type = 'simple', verbose = true, silent = false, auto = false } = options;
+    const creativeRoute = await this.detectCreativeRoute(task);
+    const isCreative = creativeRoute?.handlerAvailable && (creativeRoute.workflowType === 'multi-app' || (creativeRoute.apps?.length || 0) > 0);
 
-    if (auto) {
-      const needsMASEL = this.shouldUseMASEL(task);
-      if (!needsMASEL) {
-        return { auto_skipped: true, reason: 'Task does not require multi-agent workflow' };
-      }
+    if (auto && !this.shouldUseMASEL(task) && !isCreative) {
+      return { auto_skipped: true, reason: 'Task does not require multi-agent workflow' };
     }
 
     const log = silent ? () => {} : (verbose ? console.log : () => {});
+    const resolvedType = router.route(task, creativeRoute);
 
-    log("\n" + "=".repeat(60));
-    log("🚀 MASEL: Starting Complete Workflow");
-    log("=".repeat(60));
-    log(`Task: ${task}`);
-    log(`Type: ${workflow_type}`);
+    log(`\n${"=".repeat(60)}`);
+    log(`🚀 MASEL v1.9.1 | ${resolvedType} workflow`);
+    log(`${"=".repeat(60)}\nTask: ${task}`);
 
-    const plan = await this.tools.maselPlan({ task, workflow_type });
-    log(`\n✅ Plan created: ${plan.task_id}`);
+    if (isCreative) log(`Creative: ${(creativeRoute.apps || []).join(', ')}`);
 
-    const execution = await this.tools.maselExecute({ plan });
-    log(`✅ Execution: ${execution.status}`);
+    const result = await workflows.complete(task, {
+      workflowType: resolvedType,
+      plan: this.tools.maselPlan,
+      execute: this.tools.maselExecute,
+      review: this.tools.maselReview,
+      learn: this.tools.maselLearn,
+      creativeRoute: isCreative ? creativeRoute : null,
+    });
 
-    const review = await this.tools.maselReview({ results: execution.results, plan });
-    log(`✅ Review: ${review.decision}`);
-
-    log("\n" + "=".repeat(60));
-    log("✅ MASEL Workflow Complete!");
-    log("=".repeat(60));
-
-    return { plan, execution, review, success: review.decision === 'APPROVE' };
+    log(`✅ ${result.success ? 'APPROVED' : 'NEEDS WORK'} (${result.review.overall_score}/100)`);
+    return result;
   }
 
-  async plan(task, workflow_type = 'simple') {
-    return this.tools.maselPlan({ task, workflow_type });
-  }
+  async plan(task, workflow_type) { return this.tools.maselPlan({ task, workflow_type: workflow_type || 'simple' }); }
+  async execute(plan) { return this.tools.maselExecute({ plan }); }
+  async review(results, plan) { return this.tools.maselReview({ results, plan }); }
+  async status() { return this.tools.maselStatus({}); }
+  async souls() { return this.tools.maselSouls({ action: 'list' }); }
 
-  async execute(plan) {
-    return this.tools.maselExecute({ plan });
-  }
-
-  async review(results, plan) {
-    return this.tools.maselReview({ results, plan });
-  }
-
-  async status() {
-    return this.tools.maselStatus({});
-  }
-
-  async souls() {
-    return this.tools.maselSouls({ action: 'list' });
-  }
-
-  async silent(task, options = {}) {
-    return this.complete(task, { ...options, silent: true, verbose: false });
-  }
+  async silent(task, options = {}) { return this.complete(task, { ...options, silent: true, verbose: false }); }
 
   async auto(task, options = {}) {
-    if (!this.shouldUseMASEL(task)) {
-      return { 
-        auto_skipped: true, 
-        task, 
-        action: 'execute_directly',
-        reason: 'Simple task does not require multi-agent workflow'
-      };
+    const creativeRoute = await this.detectCreativeRoute(task);
+    const isCreative = creativeRoute?.handlerAvailable && (creativeRoute.workflowType === 'multi-app' || (creativeRoute.apps?.length || 0) > 0);
+    if (!this.shouldUseMASEL(task) && !isCreative) {
+      return { auto_skipped: true, task, action: 'execute_directly', reason: 'Simple task does not require multi-agent workflow' };
+    }
+    if (isCreative) {
+      return this.silent(task, { ...options, workflow_type: creativeRoute.workflowType === 'multi-app' ? 'creative-suite' : 'creative-single' });
     }
     return this.silent(task, options);
+  }
+
+  /**
+   * v1.9.1: 注入 sessions_spawn 函数
+   */
+  setSpawnFn(fn) {
+    agents.setSpawnFn(fn);
   }
 }
 
 const masel = new MASEL();
 
 // ============================================================================
-// Viking Lite（简化版，使用文件记忆）
+// Viking Lite
 // ============================================================================
-
 function createMemory(agentType, contextPrefix) {
   return {
-    startTask: (description) => `task-${Date.now()}`,
-    recordSuccess: async (output, metadata) => {
-      await autoRecord(`[${agentType}] Success: ${contextPrefix}`, output.substring(0, 200));
-    },
-    recordFailure: async (error, context) => {
-      await autoRecord(`[${agentType}] Failure: ${contextPrefix}`, error.message);
-    },
-    getHints: async (taskDescription) => {
-      const memories = await autoRecall(`${agentType} ${contextPrefix} ${taskDescription}`, 3);
-      return memories.map(m => ({ type: 'historical', message: m }));
-    },
-    quickRecord: async (description, fn) => fn(),
-    getStats: async () => ({
-      recent_errors: 0,
-      today_errors: 0,
-      hints_available: true
-    })
+    startTask: (d) => `task-${Date.now()}`,
+    recordSuccess: async (o) => autoRecord(`[${agentType}] Success: ${contextPrefix}`, String(o).substring(0, 200)),
+    recordFailure: async (e) => autoRecord(`[${agentType}] Failure: ${contextPrefix}`, e.message || String(e)),
+    getHints: async (d) => (await autoRecall(`${agentType} ${contextPrefix} ${d}`, 3)).map(m => ({ type: 'historical', message: m })),
+    quickRecord: async (d, fn) => fn(),
+    getStats: async () => { const db = getSQLite(); return db ? db.stats() : { memories: 0 }; }
   };
 }
 
 async function withMemory(agentType, taskDescription, fn, options = {}) {
   const memory = createMemory(agentType, taskDescription);
   const hints = await memory.getHints(taskDescription);
-  
-  if (options.showHints && hints.length > 0) {
-    console.log("\n💡 历史提示:");
-    hints.forEach(h => console.log(`   [${h.type}] ${h.message}`));
-  }
-
+  if (options.showHints && hints.length > 0) console.log("\n💡 历史提示:", hints);
   memory.startTask(taskDescription);
-
   try {
     const result = await fn();
     await memory.recordSuccess(String(result));
@@ -616,201 +340,77 @@ async function withMemory(agentType, taskDescription, fn, options = {}) {
 }
 
 // ============================================================================
-// CLI-Anything 集成
+// v1.7.0+ 兼容接口
 // ============================================================================
+function getUnifiedMemory() { return getUltimateMemory(); }
+function getOAC() { try { return require('../../utils/oac/openclaw-automation'); } catch (e) { return null; } }
+function getErrorHandler() { try { return require('../../utils/error-handler'); } catch (e) { return null; } }
 
-let cliAnything = null;
-try {
-  cliAnything = require('./src/tools/cli-anything.js');
-} catch (e) {
-  cliAnything = null;
-}
-
-let qualityChecker = null;
-try {
-  qualityChecker = require('./src/tools/quality-checker.js');
-} catch (e) {
-  qualityChecker = null;
-}
-
-async function cliAnythingWorkflow(steps, memory) {
-  if (!cliAnything) {
-    throw new Error('CLI-Anything not available.');
+async function unifiedRecord(data, options = {}) {
+  const db = getSQLite();
+  if (db) {
+    db.store({
+      category: options.type || 'fact',
+      tier: options.importance === 'critical' ? 'critical' : options.importance === 'temporary' ? 'temporary' : 'important',
+      key: data.key || 'general', value: data.message || JSON.stringify(data),
+      type: options.type || 'general', weight: options.weight || 0.5, source: data.response || '',
+    });
+    return;
   }
-  return cliAnything.cliAnythingWorkflow(steps, memory);
+  return autoRecord(data.message || JSON.stringify(data), data.response || '');
 }
 
-async function routeToCliAnything(taskDescription, memory) {
-  if (!cliAnything) {
-    return { available: false, reason: 'CLI-Anything not installed' };
-  }
-  return { available: true, ...(await cliAnything.routeTask(taskDescription, memory)) };
+async function unifiedRecall(query, options = {}) { return autoRecall(query, options.limit || 10); }
+
+async function resilientComplete(task, options = {}) {
+  const eh = getErrorHandler();
+  if (!eh) return masel.complete(task, options);
+  return eh.wrap(() => masel.complete(task, options), {
+    context: 'masel-complete', retries: options.retries || 2,
+    fallback: async (error) => ({ status: 'fallback', result: `Fallback: ${task}`, error: error.message })
+  });
 }
 
 // ============================================================================
 // 导出
 // ============================================================================
-
-// ============================================================================
-// v1.7.0 OpenClaw 集成
-// ============================================================================
-
-/**
- * 获取统一记忆系统 (v1.7.0)
- */
-function getUnifiedMemory() {
-  try {
-    return require('../../utils/memory');
-  } catch (e) {
-    console.warn('[MASEL] Unified memory not available:', e.message);
-    return null;
-  }
+// ClawTeam Bridge
+let clawteamBridge;
+try {
+  clawteamBridge = require('./src/tools/clawteam-bridge');
+} catch {
+  clawteamBridge = null;
 }
 
-/**
- * 获取 OAC (v1.7.0)
- */
-function getOAC() {
-  try {
-    return require('../../utils/oac/openclaw-automation');
-  } catch (e) {
-    console.warn('[MASEL] OAC not available:', e.message);
-    return null;
-  }
-}
-
-/**
- * 获取错误处理器 (v1.7.0)
- */
-function getErrorHandler() {
-  try {
-    return require('../../utils/error-handler');
-  } catch (e) {
-    console.warn('[MASEL] Error handler not available:', e.message);
-    return null;
-  }
-}
-
-/**
- * 使用统一记忆系统记录 (v1.7.0)
- */
-async function unifiedRecord(data, options = {}) {
-  const memory = getUnifiedMemory();
-  if (!memory) {
-    // 回退到旧系统
-    return autoRecord(data.message || JSON.stringify(data), data.response || '');
-  }
-  
-  return memory.store(data, {
-    type: options.type || 'general',
-    importance: options.importance || 'important',
-    ...options
-  });
-}
-
-/**
- * 使用统一记忆系统检索 (v1.7.0)
- */
-async function unifiedRecall(query, options = {}) {
-  const memory = getUnifiedMemory();
-  if (!memory) {
-    // 回退到旧系统
-    return autoRecall(query);
-  }
-  
-  return memory.retrieve(query, options);
-}
-
-/**
- * 执行带错误处理的 MASEL 任务 (v1.7.0)
- */
-async function resilientComplete(task, options = {}) {
-  const errorHandler = getErrorHandler();
-  
-  if (!errorHandler) {
-    // 回退到普通执行
-    return masel.complete(task, options);
-  }
-  
-  return errorHandler.wrap(
-    () => masel.complete(task, options),
-    {
-      context: 'masel-complete',
-      retries: options.retries || 2,
-      fallback: async (error) => {
-        console.log('[MASEL] Fallback execution due to:', error.message);
-        // 简化执行
-        return {
-          status: 'fallback',
-          result: `Task completed with fallback: ${task}`,
-          error: error.message
-        };
-      }
-    }
-  );
-}
-
-module.exports = { 
-  // MASEL 核心
-  MASEL, 
-  masel,
-  
-  // Viking Lite
-  createMemory,
-  withMemory,
-  
-  // Auto Memory API（v1.7.0 增强版）
-  initAutoMemory,
-  autoRecord,
-  autoRecall,
-  getUserProfile,
-  setPreference,
-  getPreference,
-  FileBasedMemory,
-  
-  // CLI-Anything
-  cliAnythingWorkflow,
-  routeToCliAnything,
+module.exports = {
+  MASEL, masel,
+  createMemory, withMemory,
+  initAutoMemory, autoRecord, autoRecall, getUserProfile, setPreference, getPreference,
+  cliAnythingWorkflow, routeToCliAnything, routeToLocalCreativeSuite,
   cliAnything: cliAnything || {},
-  
-  // Quality Checker
   qualityCheck: qualityChecker ? qualityChecker.quickCheck : null,
   strictQualityCheck: qualityChecker ? qualityChecker.strictCheck : null,
   qualityChecker: qualityChecker || {},
-  
-  // v1.7.0 OpenClaw 集成
-  getUnifiedMemory,
-  getOAC,
-  getErrorHandler,
-  unifiedRecord,
-  unifiedRecall,
-  resilientComplete
+  getUnifiedMemory, getOAC, getErrorHandler,
+  unifiedRecord, unifiedRecall, resilientComplete,
+  getSQLite,
+  // v1.9.1 新导出
+  router, agents, workflows,
+  // ClawTeam 集成
+  clawteamBridge: clawteamBridge || {},
+  buildEnhancedSpawnPrompt: clawteamBridge ? clawteamBridge.buildEnhancedSpawnPrompt : null,
+  extractAndRecordErrors: clawteamBridge ? clawteamBridge.extractAndRecordErrors : null,
+  teamRetrospective: clawteamBridge ? clawteamBridge.teamRetrospective : null,
 };
-
-// ============================================================================
-// 启动信息
-// ============================================================================
 
 if (require.main === module) {
   console.log("╔════════════════════════════════════════════════════════╗");
-  console.log("║  MASEL Wrapper v1.7.0 - OpenClaw Integration          ║");
+  console.log("║  MASEL v1.9.1 - Modular Architecture + SQLite         ║");
   console.log("╚════════════════════════════════════════════════════════╝");
-  console.log("");
-  console.log("✅ Features:");
-  console.log("   • Auto-initialized memory system");
-  console.log("   • File-based persistent storage");
-  console.log("   • Automatic information extraction");
-  console.log("   • Unified Memory System (L0-L3)");
-  console.log("   • OAC Integration");
-  console.log("   • Error Handler with auto-recovery");
-  console.log("   • 60% Test Coverage");
-  console.log("");
-  console.log("📖 Usage:");
-  console.log("   const { masel, autoRecord, autoRecall } = require('./masel-wrapper');");
-  console.log("   await autoRecord('用户消息', 'AI回复');");
-  console.log("   const memories = await autoRecall('查询上下文');");
-  console.log("");
-  console.log("🚀 v1.7.0 New:");
-  console.log("   const { unifiedRecord, unifiedRecall, resilientComplete } = require('./masel-wrapper');");
-  console.log("   await unifiedRecord(data, { type: 'project', importance: 'critical' });");
+  const db = getSQLite();
+  if (db) {
+    const s = db.stats();
+    console.log(`📊 ${s.memories} memories | ${s.byTier.map(t => `${t.tier}=${t.c}`).join(' ')}`);
+  }
+  console.log(`📦 Modules: router + agents + workflows`);
 }

@@ -5,6 +5,7 @@
 
 const ultimateMemory = require('./ultimate-memory.js');
 const importanceManager = require('./importance-manager.js');
+const { retrieve } = require('./retrieval-core');
 const fs = require('fs');
 const path = require('path');
 
@@ -55,6 +56,16 @@ function recordConversation(userMessage, aiResponse, metadata = {}) {
 /**
  * 从对话中提取结构化记忆
  */
+function cleanExtractedText(text = '') {
+  return String(text)
+    .replace(/[“”"']/g, '')
+    .replace(/^(?:是|就是|关于)\s+/, '')
+    .replace(/\b(?:收到|好的|好呀|明白了|记住了|ok|okay)\b/gi, '')
+    .replace(/[，,、；;:\-\s]+$/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
 function extractAndStoreMemories(userMessage, aiResponse, sourceId) {
   const text = `${userMessage} ${aiResponse}`;
   const memories = [];
@@ -90,11 +101,13 @@ function extractAndStoreMemories(userMessage, aiResponse, sourceId) {
   ];
   
   for (const pattern of preferencePatterns) {
-    const match = text.match(pattern);
+    const match = userMessage.match(pattern);
     if (match) {
+      const extracted = cleanExtractedText(match[1]);
+      if (!extracted) continue;
       const result = ultimateMemory.storeStructuredMemory(
         'preference',
-        `用户喜欢: ${match[1]}`,
+        `用户喜欢: ${extracted}`,
         {
           importance: 'important',
           source: sourceId,
@@ -112,11 +125,13 @@ function extractAndStoreMemories(userMessage, aiResponse, sourceId) {
   ];
   
   for (const pattern of factPatterns) {
-    const match = text.match(pattern);
+    const match = userMessage.match(pattern);
     if (match) {
+      const extracted = cleanExtractedText(match[1]);
+      if (!extracted || extracted.length < 6) continue;
       const result = ultimateMemory.storeStructuredMemory(
         'fact',
-        match[1],
+        extracted,
         {
           importance: 'critical',
           source: sourceId,
@@ -133,139 +148,38 @@ function extractAndStoreMemories(userMessage, aiResponse, sourceId) {
 /**
  * 搜索记忆 (增强版)
  */
-function searchMemories(query, options = {}) {
-  // 搜索 L2 结构化记忆
-  const structuredResults = ultimateMemory.searchMemories(query, options);
-  
-  // 搜索 L1 每日摘要
-  const summaryResults = searchDailySummaries(query);
-  
-  // 搜索 L0 原始对话 (最近 7 天)
-  const rawResults = searchRawConversations(query, 7);
-  
+async function searchMemories(query, options = {}) {
+  const retrieval = await retrieve(query, {
+    config: options.config || {},
+    debug: options.debug || false
+  });
+
+  const structuredResults = retrieval.results.filter(r => r.layer === 'l2');
+  const summaryResults = retrieval.results.filter(r => r.layer === 'l1');
+  const rawResults = retrieval.results.filter(r => r.layer === 'l0');
+  const patternResults = retrieval.results.filter(r => r.layer === 'l3');
+
   return {
     structured: structuredResults,
     summaries: summaryResults,
     raw: rawResults,
-    combined: combineResults(structuredResults, summaryResults, rawResults)
+    patterns: patternResults,
+    combined: retrieval.results,
+    debug: {
+      query: retrieval.query,
+      totalCandidates: retrieval.totalCandidates,
+      totalResults: retrieval.totalResults,
+      configUsed: retrieval.configUsed
+    }
   };
 }
 
 /**
- * 搜索每日摘要
+ * Legacy note
+ *
+ * 旧的 searchDailySummaries / searchRawConversations / combineResults
+ * 已被统一 retrieval-core 替代，保留的双轨逻辑已移除。
  */
-function searchDailySummaries(query) {
-  const summaryPath = path.join(__dirname, '../../memory/daily-summaries');
-  if (!fs.existsSync(summaryPath)) {
-    return [];
-  }
-  
-  const results = [];
-  const files = fs.readdirSync(summaryPath).filter(f => f.endsWith('.json'));
-  const queryLower = query.toLowerCase();
-  
-  for (const file of files.slice(-30)) {  // 只搜索最近 30 天
-    try {
-      const summary = JSON.parse(fs.readFileSync(path.join(summaryPath, file), 'utf-8'));
-      const text = JSON.stringify(summary).toLowerCase();
-      
-      if (text.includes(queryLower)) {
-        results.push({
-          type: 'daily_summary',
-          date: summary.date,
-          summary: summary.summary,
-          relevance: text.split(queryLower).length - 1
-        });
-      }
-    } catch (e) {
-      // ignore
-    }
-  }
-  
-  return results.sort((a, b) => b.relevance - a.relevance);
-}
-
-/**
- * 搜索原始对话
- */
-function searchRawConversations(query, daysBack = 7) {
-  const results = [];
-  const queryLower = query.toLowerCase();
-  
-  for (let i = 0; i < daysBack; i++) {
-    const date = new Date();
-    date.setDate(date.getDate() - i);
-    const dateStr = date.toISOString().split('T')[0];
-    
-    const logFile = path.join(__dirname, '../../memory/raw-conversations', `${dateStr}.jsonl`);
-    if (!fs.existsSync(logFile)) continue;
-    
-    try {
-      const lines = fs.readFileSync(logFile, 'utf-8').trim().split('\n').filter(l => l);
-      
-      for (const line of lines) {
-        const record = JSON.parse(line);
-        const text = `${record.user_message} ${record.ai_response}`.toLowerCase();
-        
-        if (text.includes(queryLower)) {
-          results.push({
-            type: 'raw_conversation',
-            timestamp: record.timestamp,
-            preview: record.user_message.substring(0, 100),
-            relevance: text.split(queryLower).length - 1
-          });
-        }
-      }
-    } catch (e) {
-      // ignore
-    }
-  }
-  
-  return results.sort((a, b) => b.relevance - a.relevance).slice(0, 10);
-}
-
-/**
- * 合并搜索结果
- */
-function combineResults(structured, summaries, raw) {
-  const combined = [];
-  
-  // 结构化记忆权重最高
-  for (const item of structured.slice(0, 5)) {
-    combined.push({
-      source: 'structured',
-      content: item.memory.content,
-      type: item.memory.type,
-      score: item.relevance_score * 1.5,  // 加权
-      timestamp: item.memory.created_at
-    });
-  }
-  
-  // 每日摘要
-  for (const item of summaries.slice(0, 3)) {
-    combined.push({
-      source: 'summary',
-      content: item.summary,
-      type: 'daily_summary',
-      score: item.relevance,
-      timestamp: item.date
-    });
-  }
-  
-  // 原始对话
-  for (const item of raw.slice(0, 3)) {
-    combined.push({
-      source: 'raw',
-      content: item.preview,
-      type: 'conversation',
-      score: item.relevance * 0.5,  // 较低权重
-      timestamp: item.timestamp
-    });
-  }
-  
-  // 按分数排序
-  return combined.sort((a, b) => b.score - a.score);
-}
 
 /**
  * 获取会话启动上下文
@@ -345,7 +259,10 @@ function getSessionContext(options = {}) {
       title: '最近对话',
       content: recentConversations
         .slice(-conversationLimit)
-        .map(r => `[${new Date(r.timestamp).toLocaleTimeString()}] ${r.user_message.substring(0, 80)}`)
+        .map(r => {
+          const preview = (r.user_message || r.message || r.content || '[无文本内容]').substring(0, 80);
+          return `[${new Date(r.timestamp).toLocaleTimeString()}] ${preview}`;
+        })
         .join('\n')
     });
   }

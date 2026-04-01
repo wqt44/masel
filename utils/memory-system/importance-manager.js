@@ -58,12 +58,15 @@ function detectProjectMentions(conversationText) {
  * 从项目内容提取项目名称
  */
 function extractProjectName(content) {
+  const safeContent = String(content || '').trim();
+  if (!safeContent) return null;
+
   // 匹配 "用户有一个叫 X 的项目" 格式
-  const match = content.match(/叫\s+(\w+)\s+的项目/i);
+  const match = safeContent.match(/叫\s+(\w+)\s+的项目/i);
   if (match) return match[1];
   
   // 匹配 "X 项目"
-  const match2 = content.match(/(\w+)\s*项目/i);
+  const match2 = safeContent.match(/(\w+)\s*项目/i);
   if (match2) return match2[1];
   
   return null;

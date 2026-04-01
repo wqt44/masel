@@ -1,0 +1,35 @@
+{
+  "name": "openclaw-cli",
+  "version": "1.7.1",
+  "description": "OpenClaw CLI - Command line interface for OpenClaw Automation System",
+  "main": "bin/openclaw.js",
+  "bin": {
+    "openclaw": "./bin/openclaw.js"
+  },
+  "scripts": {
+    "test": "node tests/config.test.js && node tests/memory.test.js && node tests/skill-pipeline.test.js && node tests/self-improving.test.js",
+    "start": "node utils/oac/openclaw-automation-optimized.js",
+    "dashboard": "node utils/dashboard/server.js"
+  },
+  "keywords": [
+    "openclaw",
+    "automation",
+    "ai",
+    "multi-agent",
+    "self-improving",
+    "cli"
+  ],
+  "author": "TvTongg & TwTongg",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/openclaw/openclaw"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.8.0",
+    "xlsx": "^0.18.5"
+  }
+}

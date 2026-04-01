@@ -88,7 +88,25 @@ const forgotten = getForgottenProjects();
 // 输出: "chachacha 项目已休眠 45 天"
 ```
 
-### 4. 自我改进系统集成
+### 4. ClawTeam Overlay Monitoring（后续增强）
+
+新增一层对 ClawTeam 失败保护的可视化监控，不改变原生 task status 枚举：
+
+- repeated failure / cooldown → `paused_pending_leader`
+- leader fallback notify 会被记录并进入 overlay state
+- `maselStatus()` 新增：
+  - `clawteam_overlay`
+  - `clawteam_overlay_text`
+- 新增 CLI：
+
+```bash
+node skills/masel/scripts/clawteam-overlay-view.js --team my-team --tasks
+node skills/masel/scripts/clawteam-overlay-view.js --team my-team --board --text
+```
+
+适合 control-ui、terminal summary、dashboard 入口直接复用。
+
+### 5. 自我改进系统集成
 
 MASEL 现在具备自我改进能力：
 
@@ -101,7 +119,7 @@ const result = await selfImproving.executeSelfImprovementCycle();
 // 改进动作: 3 个
 ```
 
-### 5. 技能流水线集成
+### 6. 技能流水线集成
 
 自动发现、审查、安装技能：
 
@@ -129,7 +147,36 @@ const result = await wrap(
 );
 ```
 
-### 7. 监控仪表板
+### 7. 本地创作工具 MCP 套件
+
+MASEL 现在可以更清晰地协调本地创作工具链：
+
+```text
+local-creative-mcp-suite/
+├── gimp-mcp      # 2D 图像处理
+├── blender-mcp   # 3D 场景与渲染
+└── office-mcp    # Writer / Calc / Impress / PDF 输出
+```
+
+**能力**:
+- GIMP MCP: 创建/打开/导出图像、滤镜、文本、缩放/旋转
+- Blender MCP: 场景控制、对象创建、材质、变换、渲染
+- Office MCP: 文档创建、文件转换、PDF 导出
+
+**典型流水线**:
+- Blender 渲染基础图
+- GIMP 修图 / 加字 / 输出视觉稿
+- Office 生成最终提案、报告或 PDF
+
+**已正式接入 MASEL 路由逻辑**:
+- `skills/masel/src/tools/cli-anything.js` 增加 suite-aware routing
+- 可识别单工具与多工具创作任务
+- 多工具工作流会自动标记为 `local-creative-mcp-suite`
+- `masel-wrapper.js` 导出 `routeToLocalCreativeSuite()` 供上层直接调用
+- `masel.auto()` / `masel.complete()` 已接入创作任务分类流程
+- 复杂创作任务会自动落到 `creative-suite` / `creative-single` 工作流类型
+
+### 8. 监控仪表板
 
 可视化监控 MASEL 运行状态：
 
@@ -285,9 +332,10 @@ cd utils/oac && node start.js
 |------|--------|--------|------|
 | 代码行数 | ~8,000 | ~17,000 | +113% |
 | 测试覆盖 | 10% | 60% | +50% |
-| 系统健康 | 70 | 90 | +29% |
+| 系统健康 | 70 | 90+ | +29% |
 | 自动化程度 | 40% | 90% | +125% |
 | 记忆系统 | L0-L2 | L0-L3 | +1层 |
+| 本地创作 MCP | 分散能力 | 套件化整合 | 新增 |
 
 ---
 
@@ -388,6 +436,11 @@ node skills/masel/test-viking-lite.js
 - 移除旧系统依赖
 - 统一配置访问
 - 100% 错误处理覆盖
+- 本地创作 MCP 能力完成套件化整理
+  - GIMP MCP
+  - Blender MCP
+  - Office MCP
+  - Local Creative MCP Suite 路由层
 
 **MASEL 现在是一个完整的、自管理的、自进化的 AI 系统！**
 

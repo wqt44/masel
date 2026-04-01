@@ -184,7 +184,7 @@ function backupOldMemories() {
   const backupDir = path.join(__dirname, '../../memory/backup', `migration-${Date.now()}`);
   
   if (!fs.existsSync(backupDir)) {
-    fs.mkdirSync(backupDir, { recursive: true });
+    ensureDir(backupDir);
   }
   
   for (const [name, filePath] of Object.entries(OLD_MEMORY_PATHS)) {

@@ -1,0 +1,57 @@
+{
+  "tables": {
+    "memory_nodes": {
+      "primaryKey": "id",
+      "columns": {
+        "id": "TEXT PRIMARY KEY",
+        "kind": "TEXT NOT NULL",
+        "ref_id": "TEXT",
+        "content": "TEXT",
+        "timestamp": "DATETIME",
+        "source_path": "TEXT",
+        "metadata": "JSON",
+        "created_at": "DATETIME DEFAULT CURRENT_TIMESTAMP",
+        "updated_at": "DATETIME DEFAULT CURRENT_TIMESTAMP"
+      },
+      "indexes": [
+        "idx_memory_nodes_kind",
+        "idx_memory_nodes_ref_id",
+        "idx_memory_nodes_timestamp"
+      ]
+    },
+    "memory_edges": {
+      "columns": {
+        "id": "INTEGER PRIMARY KEY AUTOINCREMENT",
+        "from_node": "TEXT NOT NULL",
+        "to_node": "TEXT NOT NULL",
+        "edge_type": "TEXT NOT NULL",
+        "weight": "REAL DEFAULT 1.0",
+        "metadata": "JSON",
+        "created_at": "DATETIME DEFAULT CURRENT_TIMESTAMP",
+        "updated_at": "DATETIME DEFAULT CURRENT_TIMESTAMP"
+      },
+      "unique": ["from_node", "to_node", "edge_type"],
+      "indexes": [
+        "idx_memory_edges_from",
+        "idx_memory_edges_to",
+        "idx_memory_edges_type"
+      ]
+    },
+    "memory_provenance": {
+      "columns": {
+        "id": "INTEGER PRIMARY KEY AUTOINCREMENT",
+        "target_node": "TEXT NOT NULL",
+        "source_node": "TEXT NOT NULL",
+        "provenance_type": "TEXT NOT NULL",
+        "confidence": "REAL DEFAULT 1.0",
+        "metadata": "JSON",
+        "created_at": "DATETIME DEFAULT CURRENT_TIMESTAMP"
+      },
+      "unique": ["target_node", "source_node", "provenance_type"],
+      "indexes": [
+        "idx_memory_provenance_target",
+        "idx_memory_provenance_source"
+      ]
+    }
+  }
+}

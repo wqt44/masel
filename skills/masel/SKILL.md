@@ -1,82 +1,61 @@
-# MASEL - Multi-Agent System with Error Learning
+---
+name: masel
+description: Multi-agent execution system for OpenClaw. Use when a task is complex enough to benefit from planning, delegated execution, testing/review, and learning from errors rather than direct one-step completion.
+---
 
-**Version**: v1.7.0 "OpenClaw Integration"  
-**Status**: ✅ Production Ready
+# MASEL
 
-MASEL is a self-evolving multi-agent system for OpenClaw that orchestrates sub-agents to complete complex tasks while learning from errors to avoid repeating mistakes.
+MASEL is a multi-agent execution system for OpenClaw that breaks complex tasks into planning, execution, review, and learning steps.
 
-## What's New in v1.7.0
+## Route here when
 
-### 🎉 OpenClaw Integration
-- **OAC Integration**: Full integration with OpenClaw Automation Core
-- **Unified Memory**: Four-layer memory system (L0-L3)
-- **Self-Improving**: Automatic error analysis and improvement
-- **Skill Pipeline**: Automated skill discovery and management
-- **Dashboard**: Visual monitoring and management
-- **Error Handler**: Unified error handling and recovery
+Use `MASEL` when the task is mainly:
+- complex enough to benefit from planning before execution
+- best handled by multiple roles or sub-agents
+- likely to need review, testing, or iterative refinement
+- worth recording lessons from failures or quality checks
 
-### 🔧 Enhanced Features
-- **Forgotten Prevention**: Automatic detection and refresh of important memories
-- **Config Center**: Unified configuration management
-- **Test Framework**: 60% test coverage
-- **Cron Jobs**: 4 automated maintenance tasks
+Do not use MASEL for trivial one-step tasks that can be completed directly.
 
-See [RELEASE-v1.7.0.md](RELEASE-v1.7.0.md) for full release notes.
+## Core model
 
-## Overview
+MASEL treats execution like an organized workflow:
+- planning
+- delegated execution
+- testing/review
+- learning from errors
 
-MASEL treats task execution as a company workflow:
-- **CEO**: Analyzes tasks, brainstorms solutions, refines specs, and delegates to departments
-- **Dev Department**: Handles coding and testing with TDD workflow
-- **Research Department**: Gathers and analyzes information
-- **QA Department**: Reviews deliverables with automated quality assessment
+Common roles:
+- CEO / planner
+- development/coding
+- research
+- QA / reviewer
 
-## Key Features
+## Default workflow
 
-### 1. Self-Evolving Architecture
-- **Trajectory Recording**: Captures complete execution history
-- **Loss Function**: Multi-dimensional quality assessment
-- **Back-Propagation**: Automatic error attribution
-- **Auto-Optimization**: Self-improving prompts and agent souls
+Typical nodes are:
+- `brainstorm`
+- `spec`
+- `plan`
+- `execute`
+- `test`
+- `review`
 
-### 2. MASEL-Viking Memory System
-Three-layer storage for error memory:
-- **Hot Memory** (SQLite): Recent 10 errors, millisecond access
-- **Warm Memory** (File System): This week's errors, human-readable
-- **Cold Memory** (QMD Vector DB): All historical errors, semantic search
+Use the shortest workflow that still matches the task.
 
-### 3. Composable Workflow
-Flexible workflow nodes:
-- `brainstorm`: Explore multiple solutions
-- `spec`: Refine requirements and acceptance criteria
-- `plan`: Break down into subtasks
-- `execute`: Run sub-agents with Worktree isolation
-- `test`: TDD validation
-- `review`: Quality assessment
+## Fast path
 
-### 4. Agency Organization
-Hierarchical structure with clear roles:
-```
-CEO
-├── DevManager
-│   ├── Coder (×N)
-│   └── Tester (×N)
-├── ResearchManager
-│   └── Researcher (×N)
-└── Reviewer
-```
+### Execute a task
 
-## Usage
-
-### Basic Task Execution
 ```typescript
 const result = await maselExecute({
   task: "Analyze the codebase and generate a report",
-  workflow: "research" // or "coding", "simple", "complex"
+  workflow: "research"
 });
 ```
 
-### Custom Workflow
+### Custom workflow
+
 ```typescript
 const result = await maselExecute({
   task: "Build a web scraper",
@@ -84,126 +63,35 @@ const result = await maselExecute({
 });
 ```
 
-### Silent Mode (No Intermediate Output)
-```typescript
-// Execute without showing sub-agent steps
-const result = await maselExecute({
-  plan: executionPlan,
-  options: { silent: true }
-});
-```
+### Auto mode
 
-### Resilience & Auto Cleanup
-```typescript
-// v1.2.0: Enable fallback and cleanup
-const result = await maselExecute({
-  plan: executionPlan,
-  options: {
-    enable_fallback: true,  // Sub-agent fails → main agent takes over
-    enable_cleanup: true    // Auto cleanup after execution
-  }
-});
-```
-
-### Safe Learning
-```typescript
-// v1.2.0: Conservative learning with approval
-const result = await maselLearn({
-  review_report: review,
-  auto_update: false,       // Default: requires approval
-  require_approval: true,
-  min_confidence: 0.7       // Only learn if >70% confident
-});
-```
-
-### Auto Mode (Automatic Task Classification)
 ```javascript
 const { masel } = require('./masel-wrapper');
-
-// Automatically detect if task needs MASEL
 const result = await masel.auto("Write a Python web scraper");
-// If complex: executes with MASEL silently
-// If simple: returns { auto_skipped: true }
+```
 
-// Silent execution
+### Silent mode
+
+```javascript
 const result = await masel.silent("Implement a REST API");
-// Returns final result without intermediate steps
 ```
 
-## Architecture
+## Practical rules
 
-```
-Layer 5: Meta-Learning
-└── Optimize evolution strategies
+- Use MASEL for complex work, not for everything.
+- Prefer `auto()` when task complexity is unclear.
+- Prefer silent execution when intermediate chatter is not useful.
+- Enable fallback and cleanup for longer or riskier runs.
+- Keep learning conservative; require confidence before updating behavior.
 
-Layer 4: Evolution
-├── Auto-optimize prompts
-├── Update Agent Souls
-└── Maintain Skill Library
+## Key subsystems
 
-Layer 3: Evaluation
-├── Trajectory recording
-├── Loss Function assessment
-└── Back-propagation attribution
+- workflow orchestration
+- sub-agent execution
+- review and quality checks
+- layered memory
+- self-improvement / learning
 
-Layer 2: Execution
-├── Brainstorm → Spec → Plan
-├── Parallel execution (Worktree isolation)
-├── Integration & Test
-└── Code Review
+## Read next
 
-Layer 1: Infrastructure
-├── OpenClaw Runtime
-├── MASEL-Viking Memory
-└── Skill Library
-```
-
-## File Structure
-
-```
-skills/masel/
-├── SKILL.md                    # This file
-├── openclaw.plugin.json        # Plugin configuration
-├── src/
-│   ├── index.ts               # Entry point
-│   ├── agency/                # Organization structure
-│   │   ├── ceo.ts
-│   │   ├── departments/
-│   │   └── agency-chart.yaml
-│   ├── workflow/              # Workflow nodes and templates
-│   │   ├── nodes/
-│   │   └── templates/
-│   ├── self-improving/        # Self-evolution system
-│   │   ├── trajectory-recorder.ts
-│   │   ├── loss-function.ts
-│   │   ├── back-propagation.ts
-│   │   └── optimizer.ts
-│   ├── memory/                # MASEL-Viking storage
-│   │   ├── viking-store.ts
-│   │   ├── hot-store.ts
-│   │   └── cold-store.ts
-│   └── tools/                 # OpenClaw tools
-│       ├── masel-plan.ts
-│       ├── masel-execute.ts
-│       ├── masel-review.ts
-│       └── masel-learn.ts
-└── souls/                     # Agent soul templates
-    ├── coder/soul.md
-    ├── researcher/soul.md
-    └── reviewer/soul.md
-```
-
-## Inspired By
-
-- **DeerFlow 2.0**: Harness architecture, checkpointing, memory system
-- **Gstack**: Role-based design, opinionated workflow
-- **Superpowers**: Composable skills, TDD, Worktree isolation
-- **Agency Swarm**: Agency organization, hierarchical structure
-- **Self-Improving Agents**: Trajectory, loss function, back-propagation
-- **OpenViking**: File system paradigm for memory
-- **MemOS**: Unified memory API, rich memory types
-- **MemGPT**: Virtual context management, layered storage
-
-## License
-
-MIT
+Read implementation files when you need exact workflow nodes, memory behavior, or tool surfaces.
